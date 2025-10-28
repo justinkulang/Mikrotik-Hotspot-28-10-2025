@@ -1,0 +1,15 @@
+{
+    "mikrotik": {
+        "host": "192.168.1.22",
+        "port": 8728,
+        "username": "admin",
+        "password": "South@2011",
+        "use_ssl": false,
+        "hotspot_login_url": "http://hotspot.setup/login"
+    },
+    "server": {
+        "host": "0.0.0.0",
+        "port": 5000,
+        "debug": true
+    }
+}

@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connect to Mikrotik - Hotspot Manager</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #0d6efd; /* Borrowed from dashboard */
+            --danger-color: #dc3545;  /* Borrowed from dashboard */
+            --font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; /* Borrowed from dashboard */
+            --border-radius: 0.375rem; /* Borrowed from dashboard */
+        }
+        body {
+            font-family: var(--font-family);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f0f2f5; /* Light gray background */
+            margin: 0;
+            padding: 1rem; /* Add padding for smaller screens */
+        }
+        .login-container {
+            background: #fff;
+            padding: 2rem 2.5rem; /* Adjusted padding */
+            border-radius: var(--border-radius);
+            box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.15);
+            width: 100%;
+            max-width: 420px; /* Max width for the container */
+        }
+        .login-container h2 {
+            text-align: center;
+            color: var(--primary-color);
+            margin-bottom: 1.5rem;
+            font-size: 1.8rem; /* Slightly larger title */
+        }
+        .form-group {
+            margin-bottom: 1.25rem; /* Adjusted margin */
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: #495057; /* Darker label color */
+        }
+        .form-group input[type="text"],
+        .form-group input[type="number"],
+        .form-group input[type="password"] {
+            width: 100%;
+            padding: 0.75rem 1rem; /* Adjusted padding */
+            border: 1px solid #ced4da;
+            border-radius: var(--border-radius);
+            box-sizing: border-box; /* Ensures padding doesn't affect width */
+            font-size: 1rem;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, .25); /* Focus ring */
+        }
+        .login-button { /* Changed class name for clarity */
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: var(--border-radius);
+            font-size: 1.1rem; /* Slightly larger button text */
+            cursor: pointer;
+            transition: background-color 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+        .login-button:hover {
+            background-color: #0b5ed7; /* Darker shade on hover */
+        }
+        .login-button .fas { /* For potential icon in button */
+            font-size: 1rem;
+        }
+        #errorMessage { /* Will now use .alert classes */
+            /*
+            color: var(--danger-color);
+            background-color: #f8d7da; 
+            border: 1px solid #f5c2c7; 
+            */
+            border-radius: var(--border-radius);
+            padding: 0.75rem 1rem;
+            margin-top: 1.5rem;
+            text-align: center;
+            display: none; /* Hidden by default */
+            font-size: 0.9rem;
+        }
+        .alert { /* General alert styling */
+            padding: 0.75rem 1rem;
+            margin-top: 1.5rem;
+            border: 1px solid transparent;
+            border-radius: var(--border-radius);
+            text-align: center;
+            /* display: none; -- will be controlled by JS adding/removing class or direct style.display */
+            font-size: 0.9rem;
+        }
+        .alert-danger {
+            color: #842029;
+            background-color: #f8d7da;
+            border-color: #f5c2c7;
+        }
+        .alert-success {
+            color: #0f5132;
+            background-color: #d1e7dd;
+            border-color: #badbcc;
+        }
+         .loading-spinner { /* Copied from dashboard for consistency */
+            display: inline-block; width: 1em; height: 1em; vertical-align: -0.125em;
+            border: .2em solid currentColor; border-right-color: transparent;
+            border-radius: 50%; animation: spinner-border .75s linear infinite;
+        }
+        @keyframes spinner-border { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <h2>Connect to Mikrotik Router</h2>
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="routerHost">Router IP Address</label>
+                <input type="text" id="routerHost" placeholder="e.g., 192.168.88.1" required value="192.168.88.1">
+            </div>
+            <div class="form-group">
+                <label for="routerPort">API Port</label>
+                <input type="number" id="routerPort" placeholder="e.g., 8728" required value="8728">
+            </div>
+            <div class="form-group">
+                <label for="routerUsername">Username</label>
+                <input type="text" id="routerUsername" placeholder="e.g., admin" required value="admin">
+            </div>
+            <div class="form-group">
+                <label for="routerPassword">Password</label>
+                <input type="password" id="routerPassword" placeholder="Enter password" required>
+            </div>
+            <button type="submit" class="login-button">
+                <i class="fas fa-plug"></i> Connect
+            </button>
+            <div id="errorMessage" class="alert" style="display: none;"></div> <!-- Error messages will appear here -->
+        </form>
+    </div>
+
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', function(event) {
+            event.preventDefault(); // Prevent actual form submission
+
+            const host = document.getElementById('routerHost').value;
+            const port = document.getElementById('routerPort').value;
+            const username = document.getElementById('routerUsername').value;
+            const password = document.getElementById('routerPassword').value;
+            const errorMessageDiv = document.getElementById('errorMessage');
+            const connectButton = this.querySelector('button[type="submit"]');
+            const originalButtonHTML = connectButton.innerHTML; // Store original button content
+
+            // Clear previous error messages and hide
+            errorMessageDiv.textContent = '';
+            errorMessageDiv.style.display = 'none';
+            errorMessageDiv.className = 'alert'; // Reset classes
+
+            // Basic client-side validation
+            if (!host || !port || !username) { // Password can be empty for some router configs
+                errorMessageDiv.textContent = 'Router IP, Port, and Username are required.';
+                errorMessageDiv.className = 'alert alert-danger';
+                errorMessageDiv.style.display = 'block';
+                return;
+            }
+            if (parseInt(port) <= 0 || parseInt(port) > 65535) {
+                 errorMessageDiv.textContent = 'Please enter a valid port number (1-65535).';
+                 errorMessageDiv.className = 'alert alert-danger';
+                 errorMessageDiv.style.display = 'block';
+                return;
+            }
+
+            // Disable button and show spinner
+            connectButton.disabled = true;
+            connectButton.innerHTML = '<span class="loading-spinner"></span> Connecting...';
+
+            fetch('/api/initial-connect', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ host, port: parseInt(port), username, password }),
+            })
+            .then(response => {
+                // Store response.ok and response.status before response.json() consumes the body
+                const isOk = response.ok;
+                const status = response.status;
+                // Try to parse JSON irrespective of response.ok, as backend might send error details in JSON
+                return response.json().then(data => ({ isOk, status, data }));
+            })
+            .then(({ isOk, status, data }) => {
+                if (isOk && data.success) {
+                    errorMessageDiv.textContent = 'Successfully connected! Redirecting...';
+                    errorMessageDiv.className = 'alert alert-success';
+                    errorMessageDiv.style.display = 'block';
+                    // Redirect to dashboard
+                    window.location.href = '/dashboard';
+                } else {
+                    // Use message from backend (data.message) if available, otherwise a generic one
+                    errorMessageDiv.textContent = data.message || `Connection failed (Error ${status}). Please check details and try again.`;
+                    errorMessageDiv.className = 'alert alert-danger';
+                    errorMessageDiv.style.display = 'block';
+                }
+            })
+            .catch(error => {
+                // This catches network errors, or errors if response.json() fails (e.g. non-JSON response)
+                console.error('Error during initial connect fetch:', error);
+                errorMessageDiv.textContent = 'Network error or server is unreachable. Please check your network connection and try again.';
+                errorMessageDiv.className = 'alert alert-danger';
+                errorMessageDiv.style.display = 'block';
+            })
+            .finally(() => {
+                // Re-enable button and restore original content only if not redirecting
+                if (!errorMessageDiv.classList.contains('alert-success')) {
+                    connectButton.disabled = false;
+                    connectButton.innerHTML = originalButtonHTML;
+                }
+            });
+        });
+    </script>
+</body>
+</html>

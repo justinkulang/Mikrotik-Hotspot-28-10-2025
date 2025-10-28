@@ -1,0 +1,1435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hotspot Manager v2</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary-color: #0d6efd;
+            --secondary-color: #6c757d;
+            --success-color: #198754;
+            --danger-color: #dc3545;
+            --warning-color: #ffc107;
+            --info-color: #0dcaf0;
+            --light-color: #f8f9fa;
+            --dark-color: #212529;
+            --font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            --border-radius: 0.375rem;
+            --box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: var(--font-family);
+            background-color: #f0f2f5;
+            color: var(--dark-color);
+            display: flex;
+            height: 100vh;
+        }
+        .sidebar {
+            width: 260px;
+            background-color: #fff;
+            box-shadow: 0 0 2rem 0 rgba(0,0,0,.05);
+            display: flex;
+            flex-direction: column;
+            padding: 1rem;
+            transition: width 0.3s ease;
+        }
+        .sidebar-header { text-align: center; padding-bottom: 1.5rem; border-bottom: 1px solid #dee2e6; }
+        .sidebar-header h2 { font-size: 1.5rem; color: var(--primary-color); }
+        .sidebar-nav { flex-grow: 1; list-style: none; margin-top: 1rem; }
+        .sidebar-nav a {
+            display: flex;
+            align-items: center;
+            padding: 0.8rem 1rem;
+            color: #495057;
+            text-decoration: none;
+            border-radius: var(--border-radius);
+            margin-bottom: 0.5rem;
+            transition: background-color 0.2s, color 0.2s;
+        }
+        .sidebar-nav a:hover, .sidebar-nav a.active {
+            background-color: var(--primary-color);
+            color: #fff;
+        }
+        .sidebar-nav a i { width: 30px; text-align: center; font-size: 1.1rem; }
+        .main-content {
+            flex-grow: 1;
+            padding: 2rem;
+            overflow-y: auto;
+        }
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+        .page-header h1 { font-size: 2rem; }
+        #connectionStatus { padding: 0.5rem 1rem; border-radius: var(--border-radius); font-weight: 500; }
+        #connectionStatus.connected { background-color: #d1e7dd; color: #0f5132; }
+        #connectionStatus.disconnected { background-color: #f8d7da; color: #842029; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; animation: fadeIn 0.5s; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
+        .stat-card { background: #fff; padding: 1.5rem; border-radius: var(--border-radius); box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,.075); display: flex; align-items: center; }
+        .stat-card-icon { font-size: 2.5rem; margin-right: 1.5rem; color: var(--primary-color); }
+        .stat-card-info h3 { font-size: 1.5rem; }
+        .stat-card-info p { color: var(--secondary-color); }
+        .panel { background: #fff; padding: 2rem; border-radius: var(--border-radius); box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,.075); margin-bottom: 2rem; }
+        .panel-header { margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #dee2e6; }
+        .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; }
+        .form-group { margin-bottom: 1rem; }
+        .form-group label { display: block; margin-bottom: 0.5rem; font-weight: 500; }
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%; padding: 0.6rem 0.8rem; border: 1px solid #ced4da;
+            border-radius: var(--border-radius); font-size: 1rem;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .form-group input:focus, .form-group select:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, .25); }
+        .btn {
+            display: inline-flex; align-items: center; gap: 0.5rem;
+            padding: 0.6rem 1.2rem; font-size: 1rem; font-weight: 500;
+            border: 1px solid transparent; border-radius: var(--border-radius);
+            cursor: pointer; text-decoration: none; transition: all 0.2s;
+        }
+        .btn-primary { background-color: var(--primary-color); color: #fff; }
+        .btn-primary:hover { background-color: #0b5ed7; }
+        .btn-danger { background-color: var(--danger-color); color: #fff; }
+        .btn-success { background-color: var(--success-color); color: #fff; }
+        .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.875rem; }
+        .table-container { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+        th, td { padding: 0.8rem; text-align: left; border-bottom: 1px solid #dee2e6; vertical-align: middle; }
+        th { background-color: var(--light-color); }
+        tbody tr:hover { background-color: #f8f9fa; }
+        .status-badge { padding: 0.25em 0.6em; font-size: 75%; font-weight: 700; line-height: 1; text-align: center; white-space: nowrap; vertical-align: baseline; border-radius: 0.25rem; }
+        .status-active { color: #fff; background-color: var(--success-color); }
+        .status-disabled { color: #fff; background-color: var(--secondary-color); }
+        .modal {
+            display: none; position: fixed; z-index: 1050; top: 0; left: 0; width: 100%; height: 100%;
+            overflow: hidden; background-color: rgba(0,0,0,0.5);
+        }
+        .modal-dialog { position: relative; width: auto; max-width: 600px; margin: 1.75rem auto; }
+        .modal-content { background-color: #fff; border-radius: var(--border-radius); box-shadow: var(--box-shadow); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; border-bottom: 1px solid #dee2e6; }
+        .modal-body { padding: 1.5rem; }
+        .modal-footer { display: flex; justify-content: flex-end; gap: 0.5rem; padding: 1rem 1.5rem; border-top: 1px solid #dee2e6; }
+        .close-button { background: none; border: none; font-size: 1.5rem; cursor: pointer; }
+        .loading-spinner {
+            display: inline-block; width: 1rem; height: 1rem; vertical-align: text-bottom;
+            border: .2em solid currentColor; border-right-color: transparent;
+            border-radius: 50%; animation: spinner-border .75s linear infinite;
+        }
+        @keyframes spinner-border { to { transform: rotate(360deg); } }
+        .alert { padding: 1rem; margin-bottom: 1rem; border: 1px solid transparent; border-radius: var(--border-radius); display: none; }
+        .alert-success { color: #0f5132; background-color: #d1e7dd; border-color: #badbcc; }
+        .alert-danger { color: #842029; background-color: #f8d7da; border-color: #f5c2c7; }
+
+        .analytics-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-top: 1.5rem;
+        }
+        .chart-container {
+            position: relative;
+            height: 350px;
+            width: 100%;
+        }
+
+        @media (max-width: 992px) {
+            .analytics-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        @media (max-width: 768px) {
+            body { flex-direction: column; }
+            .sidebar { width: 100%; height: auto; flex-direction: row; align-items: center; overflow-x: auto; }
+            .sidebar-nav { display: flex; flex-direction: row; }
+            .sidebar-header { display: none; }
+            .main-content { padding: 1rem; }
+            .page-header { flex-direction: column; align-items: flex-start; gap: 1rem; }
+        }
+    </style>
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h2>Hotspot Manager</h2>
+        </div>
+        <ul class="sidebar-nav">
+            <li><a href="#" class="nav-link active" data-tab="dashboard"><i class="fas fa-tachometer-alt"></i><span>Dashboard</span></a></li>
+            <li><a href="#" class="nav-link" data-tab="users"><i class="fas fa-users"></i><span>Users</span></a></li>
+            <li><a href="#" class="nav-link" data-tab="create"><i class="fas fa-user-plus"></i><span>Create</span></a></li>
+            <li><a href="#" class="nav-link" data-tab="sessions"><i class="fas fa-wifi"></i><span>Active Sessions</span></a></li>
+            <li><a href="#" class="nav-link" data-tab="analytics"><i class="fas fa-chart-line"></i><span>Analytics</span></a></li>
+            <li><a href="#" class="nav-link" data-tab="maintenance"><i class="fas fa-tools"></i><span>Maintenance</span></a></li>
+            <li><a href="#" class="nav-link" data-tab="settings"><i class="fas fa-cog"></i><span>Settings</span></a></li>
+            <li><a href="#" id="logoutButton" class="nav-link"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a></li>
+        </ul>
+        <div class="sidebar-footer" style="text-align: center; padding: 15px 10px; font-size: 0.85em; color: #495057; border-top: 1px solid #dee2e6; margin-top: auto;">
+            <p style="margin-bottom: 5px;"><strong>The IT Dad</strong></p>
+            <p style="margin-bottom: 3px; font-size: 0.95em;">+(211) 923 616 820</p>
+            <p style="font-size: 0.95em;"><a href="mailto:justinkulang@gmail.com" style="color: var(--primary-color); text-decoration: none;">justinkulang@gmail.com</a></p>
+        </div>
+    </aside>
+    <main class="main-content">
+        <div class="page-header">
+            <h1 id="pageTitle">Dashboard</h1>
+            <div id="connectionStatus" class="disconnected"><i class="fas fa-exclamation-triangle"></i><span>Connecting...</span></div>
+        </div>
+        <div id="globalAlert" class="alert"></div>
+
+        <div id="dashboard" class="tab-content active">
+            <div class="dashboard-grid">
+                <div class="stat-card">
+                    <i class="fas fa-users stat-card-icon"></i>
+                    <div class="stat-card-info">
+                        <h3 id="totalUsers">-</h3>
+                        <p>Total Users</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <i class="fas fa-wifi stat-card-icon" style="color: var(--success-color);"></i>
+                    <div class="stat-card-info">
+                        <h3 id="activeSessions">-</h3>
+                        <p>Active Sessions</p>
+                    </div>
+                </div>
+            </div>
+            <div class="panel">
+                <p>Welcome to Hotspot Manager v2. Use the menu on the left to navigate.</p>
+            </div>
+        </div>
+
+        <div id="users" class="tab-content">
+            <div class="panel">
+                <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center;">
+                    <h3>User List</h3>
+                    <button class="btn btn-primary btn-sm" onclick="loadUsers()"><i class="fas fa-sync-alt"></i> Refresh</button>
+                </div>
+                <div class="form-grid" style="margin-bottom: 1.5rem;">
+                    <div class="form-group"><input type="text" id="userSearchInput" placeholder="Search Username/Comment..."></div>
+                    <div class="form-group">
+                        <select id="userFilterProfile">
+                            <option value="">Filter by Profile...</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <select id="userFilterStatus">
+                            <option value="">Filter by Status...</option>
+                            <option value="active">Active</option>
+                            <option value="disabled">Disabled</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table id="usersTable">
+                        <thead>
+                            <tr>
+                                <th>Username</th><th>Profile</th><th>Status</th><th>Time Limit</th>
+                                <th>Data Limit</th><th>Uptime</th><th>Data Used</th><th>Comment</th><th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td colspan="9" style="text-align: center;">Loading users...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                 <div class="panel-header" style="margin-top: 2rem; display: flex; justify-content: space-between; align-items: center;">
+                    <h3>Export Users</h3>
+                </div>
+                 <div style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: center;">
+                    <div class="form-group" style="flex-grow: 1;">
+                         <label for="exportProfileFilter">Filter by Profile</label>
+                        <select id="exportProfileFilter"></select>
+                    </div>
+                    <button class="btn btn-success" onclick="triggerExport('csv')"><i class="fas fa-file-csv"></i> CSV</button>
+                    <button class="btn btn-primary" onclick="triggerExport('html_voucher')"><i class="fas fa-ticket-alt"></i> Vouchers (HTML)</button>
+                    <button class="btn btn-danger" onclick="triggerExport('pdf_voucher')"><i class="fas fa-file-pdf"></i> Vouchers (PDF)</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="create" class="tab-content">
+            <div class="panel">
+                <h3 class="panel-header">Create Single User</h3>
+                <form id="createUserForm">
+                    <div class="form-grid">
+                        <div class="form-group"><label for="username">Username</label><input type="text" id="username" required></div>
+                        <div class="form-group"><label for="password">Password</label><input type="text" id="password" required></div>
+                        <div class="form-group"><label for="profile">Profile</label><select id="profile"></select></div>
+                        <div class="form-group"><label for="timeLimit">Time Limit</label><input type="text" id="timeLimit" placeholder="e.g., 1h30m, 30d"></div>
+                        <div class="form-group"><label for="dataLimit">Data Limit (MB)</label><input type="number" id="dataLimit" placeholder="e.g., 500"></div>
+                        <div class="form-group"><label for="comment">Comment</label><input type="text" id="comment"></div>
+                    </div>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> Create User</button>
+                </form>
+            </div>
+            <div class="panel">
+                <h3 class="panel-header">Batch Voucher Generation</h3>
+                <form id="bulkCreateUserForm">
+                     <div class="form-grid">
+                        <div class="form-group"><label for="bulkNumberOfUsers">Number of Vouchers</label><input type="number" id="bulkNumberOfUsers" required></div>
+                        <div class="form-group"><label for="bulkProfile">Profile</label><select id="bulkProfile" required></select></div>
+                        <div class="form-group"><label for="bulkTimeLimit">Time Limit</label><input type="text" id="bulkTimeLimit" placeholder="e.g., 2h, 30d"></div>
+                        <div class="form-group"><label for="bulkDataLimit">Total Data Limit (MB)</label><input type="number" id="bulkDataLimit" placeholder="e.g., 1024"></div>
+                        <div class="form-group"><label for="bulkCommentPrefix">Batch Name / Comment Prefix</label><input type="text" id="bulkCommentPrefix" placeholder="e.g., Event2024"></div>
+                        <div class="form-group"><label for="bulkUsernamePrefix">Username Prefix (Optional)</label><input type="text" id="bulkUsernamePrefix" placeholder="e.g., v-"></div>
+                        <div class="form-group"><label for="bulkUsernameLength">Username Length (after prefix)</label><input type="number" id="bulkUsernameLength" value="6"></div>
+                        <div class="form-group"><label for="bulkPasswordLength">Password Length</label><input type="number" id="bulkPasswordLength" value="6"></div>
+                        <div class="form-group">
+                            <label for="bulkUsernameCharset">Username Characters</label>
+                            <select id="bulkUsernameCharset">
+                                <option value="alphanumeric" selected>Alphanumeric (Upper & Lower)</option>
+                                <option value="alphanumeric_upper">Alphanumeric (Upper Case Only)</option>
+                                <option value="alphanumeric_lower">Alphanumeric (Lower Case Only)</option>
+                                <option value="numeric">Numeric Only</option>
+                                <option value="alpha_upper">Alphabetical (Upper Case Only)</option>
+                                <option value="alpha_lower">Alphabetical (Lower Case Only)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="bulkPasswordCharset">Password Characters</label>
+                            <select id="bulkPasswordCharset">
+                                <option value="alphanumeric_symbols" selected>Alphanumeric + Symbols</option>
+                                <option value="alphanumeric">Alphanumeric (Upper & Lower)</option>
+                                <option value="alphanumeric_upper">Alphanumeric (Upper Case Only)</option>
+                                <option value="alphanumeric_lower">Alphanumeric (Lower Case Only)</option>
+                                <option value="numeric">Numeric Only</option>
+                                <option value="alpha_upper">Alphabetical (Upper Case Only)</option>
+                                <option value="alpha_lower">Alphabetical (Lower Case Only)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-success"><i class="fas fa-users-cog"></i> Generate Vouchers</button>
+                </form>
+                <div id="bulkCreateResultDisplay" style="display:none; margin-top: 1.5rem;">
+                    <h4>Generated Credentials:</h4>
+                    <textarea id="bulkCreateCredentials" rows="8" class="form-group" style="width:100%; font-family: monospace;" readonly></textarea>
+                    <button id="exportVouchersHTMLButton" class="btn btn-info" style="margin-top: 10px; display: none;">
+                        <i class="fas fa-eye"></i> View Vouchers (HTML)
+                    </button>
+                    <button id="exportVouchersPDFButton" class="btn btn-danger" style="margin-top: 10px; margin-left: 10px; display: none;">
+                        <i class="fas fa-file-pdf"></i> Download Vouchers (PDF)
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="sessions" class="tab-content">
+             <div class="panel">
+                <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center;">
+                    <h3>Active Sessions</h3>
+                    <button class="btn btn-primary btn-sm" onclick="loadActiveSessions()"><i class="fas fa-sync-alt"></i> Refresh</button>
+                </div>
+                <div class="table-container">
+                    <table id="sessionsTable">
+                        <thead>
+                            <tr>
+                                <th>Username</th><th>IP Address</th><th>MAC Address</th><th>Uptime</th>
+                                <th>Data Usage</th><th>Time Left</th><th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td colspan="7" style="text-align: center;">Loading sessions...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="analytics" class="tab-content">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <div class="panel" style="flex-grow: 1; margin: 0; text-align: center;">
+                    <h3 id="analyticsTotalData" style="font-size: 1.5em; color: var(--primary-color);">Total Data Transferred: -</h3>
+                </div>
+                <button id="refreshAnalyticsButton" class="btn btn-primary" style="margin-left: 1.5rem;"><i class="fas fa-sync-alt"></i> Refresh</button>
+            </div>
+            
+            <div class="analytics-grid">
+                <div class="panel">
+                    <h3 class="panel-header">Data Usage by Profile</h3>
+                    <div class="chart-container">
+                        <canvas id="profileUsageChart"></canvas>
+                    </div>
+                </div>
+                <div class="panel">
+                    <h3 class="panel-header">Top 10 Users by Data Usage</h3>
+                     <div class="chart-container">
+                        <canvas id="topUsersChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="maintenance" class="tab-content">
+            <div class="panel">
+                <h3 class="panel-header">User Profiles</h3>
+                <button class="btn btn-success" style="margin-bottom: 1rem;" onclick="openProfileModal()"><i class="fas fa-plus"></i> Add Profile</button>
+                <div class="table-container">
+                    <table id="profilesTable">
+                        <thead><tr><th>Name</th><th>Rate Limit</th><th>Session Timeout</th><th>Shared Users</th><th>Actions</th></tr></thead>
+                        <tbody><tr><td colspan="5" style="text-align: center;">Loading profiles...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="panel">
+                <h3 class="panel-header">Cleanup</h3>
+                <p>Automatically find and delete users who have used up their time or data allowance.</p>
+                <button class="btn btn-danger" onclick="deleteExpiredUsers()"><i class="fas fa-trash-alt"></i> Delete Expired Users</button>
+            </div>
+
+            <div class="panel">
+                <h3 class="panel-header">Delete Users by Profile</h3>
+                <div class="form-group">
+                    <label for="deleteByProfileSelect">Select Profile to Delete Users From:</label>
+                    <select id="deleteByProfileSelect"></select> 
+                </div>
+                <button id="deleteByProfileButton" class="btn btn-danger"><i class="fas fa-trash-alt"></i> Delete Users by Profile</button>
+            </div>
+
+            <div class="panel">
+                <h3 class="panel-header">Delete Users by Active Status</h3>
+                <div class="form-group">
+                    <label for="deleteByStatusSelect">Select User Status to Delete:</label>
+                    <select id="deleteByStatusSelect"> 
+                        <option value="">-- Select Status --</option>
+                        <option value="active">Active Users</option>
+                        <option value="disabled">Disabled Users</option>
+                    </select>
+                </div>
+                <button id="deleteByStatusButton" class="btn btn-danger"><i class="fas fa-user-slash"></i> Delete Users by Status</button>
+            </div>
+        </div>
+
+        <div id="settings" class="tab-content">
+            <div class="panel">
+                <h3 class="panel-header">Router Connection</h3>
+                 <form id="configForm">
+                    <div class="form-grid">
+                        <div class="form-group"><label>Router IP Address</label><input type="text" id="routerHost"></div>
+                        <div class="form-group"><label>API Port</label><input type="number" id="routerPort"></div>
+                        <div class="form-group"><label>Username</label><input type="text" id="routerUsername"></div>
+                        <div class="form-group"><label>Password</label><input type="password" id="routerPassword" placeholder="Enter new password to update"></div>
+                        <div class="form-group"><label>Hotspot Login URL (for QR Codes)</label><input type="text" id="hotspotLoginUrl" placeholder="e.g. http://my.hotspot/login"></div>
+                    </div>
+                    <div style="display: flex; gap: 1rem;">
+                        <button type="button" class="btn btn-primary" onclick="testConnection()"><i class="fas fa-plug"></i> Test</button>
+                        <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Save</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </main>
+
+    <div id="userModal" class="modal">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form id="editUserForm">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Edit User: <span id="editUsernameDisplay"></span></h5>
+                        <button type="button" class="close-button" onclick="closeModal('userModal')">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" id="editUsernameOrig">
+                        <div class="form-group"><label>New Password</label><input type="text" id="editPassword" placeholder="Leave blank to keep current"></div>
+                        <div class="form-group"><label>Profile</label><select id="editProfile"></select></div>
+                        <div class="form-group"><label>Time Limit</label><input type="text" id="editTimeLimit"></div>
+                        <div class="form-group"><label>Data Limit (MB)</label><input type="number" id="editDataLimit"></div>
+                        <div class="form-group"><label>Comment</label><input type="text" id="editComment"></div>
+                        <div class="form-group" style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="editDisabled" style="width: auto;"><label for="editDisabled" style="margin: 0;">Disabled</label>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn" onclick="closeModal('userModal')">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save Changes</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div id="profileModal" class="modal">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form id="profileForm">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="profileModalTitle">Add New Profile</h5>
+                        <button type="button" class="close-button" onclick="closeModal('profileModal')">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" id="profileId">
+                        <div class="form-group"><label for="profileName">Name</label><input type="text" id="profileName" required></div>
+                        <div class="form-group"><label for="profileRateLimit">Rate Limit (Upload/Download)</label><input type="text" id="profileRateLimit" placeholder="e.g., 512k/2M"></div>
+                        <div class="form-group"><label for="profileSessionTimeout">Session Timeout</label><input type="text" id="profileSessionTimeout" placeholder="e.g., 1d 00:00:00"></div>
+                        <div class="form-group"><label for="profileSharedUsers">Shared Users</label><input type="number" id="profileSharedUsers" placeholder="e.g., 1"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn" onclick="closeModal('profileModal')">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save Profile</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+<script>
+const API_BASE_URL = ''; // Same origin
+let currentUsers = [];
+let currentProfiles = [];
+let currentSessions = [];
+let lastGeneratedBatchCredentials = []; // To store the last batch of generated credentials
+let analyticsDataLoaded = false; // Flag for initial analytics load
+let cachedTranslations = {}; // For storing fetched translations
+
+// Chart instances
+let profileUsageChartInstance;
+let topUsersChartInstance;
+
+// Helper function to get translations
+function getTranslation(key, ...args) {
+    let translated = cachedTranslations[key] || key;
+    if (args.length > 0) {
+        args.forEach((arg, index) => {
+            translated = translated.replace(new RegExp(`\\{${index}\\}`, 'g'), arg);
+        });
+    }
+    return translated;
+}
+
+const logger = { // Simple logger
+    info: console.log,
+    warn: console.warn,
+    error: console.error,
+    debug: console.debug
+};
+
+// --- Init & Navigation ---
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.nav-link').forEach(link => {
+        link.addEventListener('click', e => {
+            e.preventDefault();
+            const tabName = link.dataset.tab;
+
+            if (tabName === 'analytics' && !analyticsDataLoaded) {
+                loadAnalyticsData();
+                analyticsDataLoaded = true;
+            }
+            
+            document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+            link.classList.add('active');
+
+            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+            document.getElementById(tabName).classList.add('active');
+            
+            document.getElementById('pageTitle').textContent = link.querySelector('span').textContent;
+        });
+    });
+    
+    // Initial load
+    init();
+    
+    // Setup static translated UI elements not covered by other functions
+    setupStaticTranslations();
+
+
+    // Setup filter listeners
+    document.getElementById('userSearchInput').addEventListener('input', () => filterAndDisplayUsers());
+    document.getElementById('userFilterProfile').addEventListener('change', () => filterAndDisplayUsers());
+    document.getElementById('userFilterStatus').addEventListener('change', () => filterAndDisplayUsers());
+
+    // Setup Maintenance button listeners
+    const deleteByProfileBtn = document.getElementById('deleteByProfileButton');
+    if (deleteByProfileBtn) {
+        deleteByProfileBtn.addEventListener('click', handleDeleteUsersByProfile);
+    }
+
+    const deleteByStatusBtn = document.getElementById('deleteByStatusButton');
+    if (deleteByStatusBtn) {
+        deleteByStatusBtn.addEventListener('click', handleDeleteUsersByStatus);
+    }
+    
+    // Setup form submissions
+    document.getElementById('configForm').addEventListener('submit', handleConfigSave);
+    document.getElementById('createUserForm').addEventListener('submit', handleCreateUser);
+    document.getElementById('bulkCreateUserForm').addEventListener('submit', handleBulkCreateUsers);
+    document.getElementById('editUserForm').addEventListener('submit', handleEditUser);
+    document.getElementById('profileForm').addEventListener('submit', handleProfileSave);
+
+    const logoutButton = document.getElementById('logoutButton');
+    if (logoutButton) {
+        logoutButton.addEventListener('click', async function(event) {
+            event.preventDefault();
+            if (confirm('Are you sure you want to logout?')) {
+                showGlobalSpinner(true); // Show spinner during API call
+                try {
+                    const result = await apiCall('/logout', { method: 'POST' });
+                    if (result && result.success) {
+                        // Spinner will be hidden by page reload/redirect
+                        window.location.href = '/'; // Redirect to login page
+                    } else {
+                        // apiCall already shows an alert on failure via its own catch/showAlert
+                        showGlobalSpinner(false); // Hide spinner if logout failed but page didn't redirect
+                    }
+                } catch (error) {
+                    // This catch is for unexpected errors not handled by apiCall's own try/catch
+                    logger.error("Logout failed unexpectedly:", error);
+                    showAlert('globalAlert', 'danger', 'Logout failed unexpectedly. Please try again.');
+                    showGlobalSpinner(false);
+                }
+            }
+        });
+    }
+
+    const exportHTMLButton = document.getElementById('exportVouchersHTMLButton');
+    if (exportHTMLButton) {
+        exportHTMLButton.addEventListener('click', function() {
+            if (!lastGeneratedBatchCredentials || lastGeneratedBatchCredentials.length === 0) {
+                showAlert('globalAlert', 'warning', 'No generated voucher data available to view.');
+                return;
+            }
+            const hotspotLoginUrlValue = document.getElementById('hotspotLoginUrl').value;
+            if (!hotspotLoginUrlValue) {
+                 showAlert('globalAlert', 'warning', 'Hotspot Login URL is not set in Settings (under the Settings Tab). QR Codes cannot be generated for viewing if this is missing.');
+                // Allow to proceed if user wants to view without QR, backend will handle missing URL for QR.
+            }
+
+            // Create a form to POST data to the new tab/window
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = `${API_BASE_URL}/api/vouchers/view_batch_html`;
+            form.target = '_blank'; // Open in a new tab
+
+            const vouchersInput = document.createElement('input');
+            vouchersInput.type = 'hidden';
+            vouchersInput.name = 'vouchers_json';
+            vouchersInput.value = JSON.stringify(lastGeneratedBatchCredentials);
+            form.appendChild(vouchersInput);
+
+            const loginUrlInput = document.createElement('input');
+            loginUrlInput.type = 'hidden';
+            loginUrlInput.name = 'hotspot_login_url';
+            loginUrlInput.value = hotspotLoginUrlValue; // Send even if empty, backend can decide
+            form.appendChild(loginUrlInput);
+
+            document.body.appendChild(form);
+            form.submit();
+            document.body.removeChild(form);
+        });
+    }
+
+    // Corrected: Ensure only one event listener for exportPDFButton
+    const exportPDFButton = document.getElementById('exportVouchersPDFButton');
+    if (exportPDFButton && !exportPDFButton.hasAttribute('data-listener-attached')) { // Check if listener already attached
+        exportPDFButton.addEventListener('click', function() {
+            if (!lastGeneratedBatchCredentials || lastGeneratedBatchCredentials.length === 0) {
+                showAlert('globalAlert', 'warning', 'No generated voucher data available for PDF export.');
+                return;
+            }
+            const hotspotLoginUrlValue = document.getElementById('hotspotLoginUrl').value;
+            
+            // QRCODE_AVAILABLE is a Python variable, not directly usable in JS unless passed to template.
+            // For now, just check if hotspotLoginUrlValue exists for a more generic warning.
+            if (!hotspotLoginUrlValue) { 
+                 showAlert('globalAlert', 'info', 'Hotspot Login URL is not set in Settings. QR Codes might be omitted in the PDF if this URL is required by the backend for them.');
+            }
+
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = `${API_BASE_URL}/api/vouchers/download_batch_pdf`;
+
+            const vouchersInput = document.createElement('input');
+            vouchersInput.type = 'hidden';
+            vouchersInput.name = 'vouchers_json';
+            vouchersInput.value = JSON.stringify(lastGeneratedBatchCredentials);
+            form.appendChild(vouchersInput);
+
+            const loginUrlInput = document.createElement('input');
+            loginUrlInput.type = 'hidden';
+            loginUrlInput.name = 'hotspot_login_url';
+            loginUrlInput.value = hotspotLoginUrlValue;
+            form.appendChild(loginUrlInput);
+
+            document.body.appendChild(form);
+            form.submit();
+            document.body.removeChild(form);
+        });
+        exportPDFButton.setAttribute('data-listener-attached', 'true'); // Mark as listener attached
+    }
+
+    const refreshAnalyticsBtn = document.getElementById('refreshAnalyticsButton');
+    if (refreshAnalyticsBtn) {
+        refreshAnalyticsBtn.addEventListener('click', loadAnalyticsData);
+    }
+});
+
+async function init() {
+    // Fetch translations first
+    try {
+        cachedTranslations = await apiCall('/translations', {}, true); // Pass true to suppress global spinner for this call if desired
+        logger.info("Translations loaded.");
+    } catch (error) {
+        logger.error("Failed to load translations:", error);
+        //cachedTranslations will remain empty, getTranslation will fallback to keys
+    }
+    // Now update UI elements that depend on translations being loaded
+    updateStaticTranslatedText();
+
+
+    await checkConnection();
+    await loadDashboardStats();
+    await loadUsers();
+    await loadProfiles(); // This will now use getTranslation for default options
+    await loadActiveSessions();
+    await loadConfig();
+    setupDeleteByStatusDropdown(); // Populate #deleteByStatusSelect with translated options
+    
+    // Auto-refresh data every 60 seconds
+    setInterval(() => {
+        if (document.getElementById('dashboard').classList.contains('active')) {
+             loadDashboardStats();
+        }
+        if (document.getElementById('users').classList.contains('active')) {
+             loadUsers(true); // silent refresh
+        }
+        if (document.getElementById('sessions').classList.contains('active')) {
+             loadActiveSessions();
+        }
+    }, 60000);
+}
+
+// --- API & Data Loading ---
+async function apiCall(endpoint, options = {}) {
+    showGlobalSpinner(true);
+    try {
+        const response = await fetch(`${API_BASE_URL}/api${endpoint}`, {
+            headers: { 'Content-Type': 'application/json' }, // We expect to send JSON
+            ...options
+        });
+
+        const contentType = response.headers.get("content-type");
+        
+        if (!response.ok) {
+            // Attempt to parse error as JSON, otherwise use text
+            let errorPayload;
+            if (contentType && contentType.indexOf("application/json") !== -1) {
+                try {
+                    errorPayload = await response.json();
+                } catch (e) {
+                    // If JSON parsing fails even if header says JSON, read as text.
+                    logger.error(`apiCall: Failed to parse JSON error response from ${endpoint} despite Content-Type. Error: ${e}`);
+                    errorPayload = { message: (await response.text()).substring(0,500) || `HTTP error! status: ${response.status}` };
+                }
+            } else {
+                 // If not JSON, capture the text response for the error message
+                const textResponse = await response.text();
+                logger.warn(`apiCall to ${endpoint} received non-JSON error response (type: ${contentType}). Body: ${textResponse.substring(0, 500)}...`);
+                errorPayload = { message: textResponse.substring(0,500) || `HTTP error! status: ${response.status}, non-JSON response.` };
+            }
+            throw new Error(errorPayload.message || `HTTP error! status: ${response.status}`);
+        }
+
+        // If response.ok, we still must check content type before parsing
+        if (contentType && contentType.indexOf("application/json") === -1) {
+            const textResponse = await response.text();
+            logger.error(`apiCall to ${endpoint} expected JSON but received ${contentType}. Response body: ${textResponse.substring(0, 500)}...`);
+            throw new Error(`Expected JSON response from server for ${endpoint}, but received ${contentType}.`);
+        }
+        
+        // If we reach here, response is OK and content type indicates JSON (or no content type header, assume JSON)
+        return await response.json();
+    } catch (error) {
+        // showAlert is already called by some specific handlers, but a generic one here might be too noisy
+        // For now, let's ensure the error is re-thrown or handled appropriately by the caller.
+        // The existing showAlert in the original catch block is fine.
+        showAlert('globalAlert', 'danger', error.message); // Keep this for now.
+        return null; // Or rethrow error depending on desired handling by callers
+    } finally {
+        showGlobalSpinner(false);
+    }
+}
+
+async function checkConnection() {
+    const statusEl = document.getElementById('connectionStatus');
+    const result = await apiCall('/test-connection', { method: 'POST' }); // apiCall shows global spinner
+
+    if (result && result.success) {
+        statusEl.className = 'connected';
+        statusEl.innerHTML = `<i class="fas fa-check-circle"></i><span> ${result.message}</span>`;
+        
+        // Ensure globalAlert is hidden if it was previously shown for a connection error
+        // (though this scenario is less likely now with upfront login)
+        const globalAlert = document.getElementById('globalAlert');
+        if (globalAlert.textContent.includes("Could not connect")) { // More generic check
+            globalAlert.style.display = 'none';
+        }
+    } else {
+        statusEl.className = 'disconnected';
+        const failureMessage = result ? result.message : 'Connection test failed. Router might be unreachable.';
+        statusEl.innerHTML = `<i class="fas fa-exclamation-triangle"></i><span> ${failureMessage}</span>`;
+        // No longer navigate to settings or show a prominent global alert here.
+        // The before_request hook will handle persistent connection issues by redirecting to login.
+        // A subtle update to connectionStatus is sufficient if testConnection is manually clicked
+        // or if init() runs and somehow the connection dropped since login.
+    }
+}
+
+async function loadDashboardStats() {
+    const data = await apiCall('/dashboard-stats');
+    if (data) {
+        document.getElementById('totalUsers').textContent = data.total_users;
+        document.getElementById('activeSessions').textContent = data.active_sessions;
+    }
+}
+
+async function loadUsers(silent = false) {
+    const tbody = document.querySelector('#usersTable tbody');
+    if (!silent) tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;"><div class="loading-spinner"></div></td></tr>`;
+    const data = await apiCall('/users');
+    if (data && data.users) {
+        currentUsers = data.users;
+        filterAndDisplayUsers();
+    } else {
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;">Could not load users.</td></tr>`;
+    }
+}
+
+async function loadProfiles() {
+    const data = await apiCall('/profiles');
+    if (data && data.profiles) {
+        currentProfiles = data.profiles;
+        // Populate all profile dropdowns
+        const profileSelects = [
+            { id: '#profile', defaultText: 'Select Profile' },
+            { id: '#bulkProfile', defaultText: 'Select Profile' },
+            { id: '#editProfile', defaultText: 'Select Profile' },
+            { id: '#userFilterProfile', defaultTextKey: 'All Profiles' },
+            { id: '#exportProfileFilter', defaultTextKey: 'All Profiles' },
+            { id: '#deleteByProfileSelect', defaultTextKey: '-- Select Profile --'}
+        ];
+        profileSelects.forEach(selConfig => {
+            const select = document.querySelector(selConfig.id);
+            if(select) {
+                const currentVal = select.value; // Preserve current selection if any
+                select.innerHTML = `<option value="">${getTranslation(selConfig.defaultTextKey)}</option>`;
+                currentProfiles.forEach(p => select.add(new Option(p.name, p.name)));
+                if(currentVal) select.value = currentVal; // Restore selection
+            }
+        });
+        displayProfiles(); // This updates the profiles table in Maintenance tab
+    }
+}
+
+function setupDeleteByStatusDropdown() {
+    const select = document.getElementById('deleteByStatusSelect');
+    if (select) {
+        select.innerHTML = `
+            <option value="">${getTranslation('-- Select Status --')}</option>
+            <option value="active">${getTranslation('Active Users')}</option>
+            <option value="disabled">${getTranslation('Disabled Users')}</option>
+        `;
+    }
+}
+
+function updateStaticTranslatedText() {
+    // Example: Update page title or other static elements if needed
+    // This function can be expanded to update any static text content set in HTML
+    // For now, most elements are dynamically rendered or have their text set by other functions.
+    // Let's ensure button texts are updated if they were static HTML and not part of a component.
+    // The Maintenance tab buttons are static in HTML:
+    const deleteByProfileButton = document.getElementById('deleteByProfileButton');
+    if (deleteByProfileButton) {
+        deleteByProfileButton.innerHTML = `<i class="fas fa-trash-alt"></i> ${getTranslation('Delete Users by Profile')}`;
+    }
+    const deleteByStatusButton = document.getElementById('deleteByStatusButton');
+    if (deleteByStatusButton) {
+        deleteByStatusButton.innerHTML = `<i class="fas fa-user-slash"></i> ${getTranslation('Delete Users by Status')}`;
+    }
+
+    // Also update labels for these sections
+    const deleteByProfileLabel = document.querySelector('label[for="deleteByProfileSelect"]');
+    if (deleteByProfileLabel) {
+        deleteByProfileLabel.textContent = getTranslation('Select Profile to Delete Users From:');
+    }
+    const deleteByStatusLabel = document.querySelector('label[for="deleteByStatusSelect"]');
+    if (deleteByStatusLabel) {
+        deleteByStatusLabel.textContent = getTranslation('Select User Status to Delete:');
+    }
+    
+    // Update panel headers in Maintenance tab for the new sections
+    // This requires finding them more robustly if more panels are added.
+    // Assuming they are the 3rd and 4th panels in the maintenance tab for now.
+    const maintenanceTab = document.getElementById('maintenance');
+    if (maintenanceTab) {
+        const panels = maintenanceTab.querySelectorAll('.panel');
+        if (panels.length > 2 && panels[2].querySelector('h3')) { // Delete by Profile panel
+            panels[2].querySelector('h3').textContent = getTranslation('Delete Users by Profile');
+        }
+        if (panels.length > 3 && panels[3].querySelector('h3')) { // Delete by Status panel
+            panels[3].querySelector('h3').textContent = getTranslation('Delete Users by Active Status');
+        }
+    }
+}
+
+
+// This function can be called from init() if there are more elements
+// that are purely static in the HTML and need their text content updated on load.
+function setupStaticTranslations() {
+    // Example: if any other static text needs updating
+    // document.getElementById('someStaticElement').textContent = getTranslation('someStaticElementKey');
+    // For now, specific updates are in updateStaticTranslatedText after translations are loaded.
+}
+
+async function loadActiveSessions() {
+    const data = await apiCall('/active-sessions');
+    const tbody = document.querySelector('#sessionsTable tbody');
+    if (data && data.sessions) {
+        currentSessions = data.sessions;
+        if (currentSessions.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;">No active sessions found.</td></tr>`;
+            return;
+        }
+        tbody.innerHTML = currentSessions.map(s => `
+            <tr>
+                <td>${s.user || ''}</td>
+                <td>${s.address || ''}</td>
+                <td>${s['mac-address'] || ''}</td>
+                <td>${s.uptime || ''}</td>
+                <td>${formatBytes(s['bytes-in'])} / ${formatBytes(s['bytes-out'])}</td>
+                <td>${s['session-time-left'] || 'Unlimited'}</td>
+                <td>
+                    <button class="btn btn-danger btn-sm" onclick="disconnectUser('${s['.id']}')">
+                        <i class="fas fa-times"></i> Disconnect
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+    } else {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;">Could not load sessions.</td></tr>`;
+    }
+}
+
+async function loadConfig() {
+    const data = await apiCall('/config');
+    if (data) {
+        document.getElementById('routerHost').value = data.mikrotik.host;
+        document.getElementById('routerPort').value = data.mikrotik.port;
+        document.getElementById('routerUsername').value = data.mikrotik.username;
+        document.getElementById('hotspotLoginUrl').value = data.mikrotik.hotspot_login_url;
+    }
+}
+
+
+// --- Display & Filtering ---
+function filterAndDisplayUsers() {
+    const search = document.getElementById('userSearchInput').value.toLowerCase();
+    const profile = document.getElementById('userFilterProfile').value;
+    const status = document.getElementById('userFilterStatus').value;
+
+    const filtered = currentUsers.filter(user => {
+        const isDisabled = user.disabled === 'true';
+        const statusMatch = (status === '') || (status === 'active' && !isDisabled) || (status === 'disabled' && isDisabled);
+        const profileMatch = (profile === '') || (user.profile === profile);
+        
+        // Robust handling for searchMatch
+        const userNameString = typeof user.name === 'string' ? user.name : '';
+        const userCommentString = typeof user.comment === 'string' ? user.comment : '';
+        // 'search' is already toLowerCase() from where it's defined.
+        const searchMatch = (userNameString.toLowerCase().includes(search) || 
+                             (user.comment && userCommentString.toLowerCase().includes(search)));
+        return statusMatch && profileMatch && searchMatch;
+    });
+    
+    const tbody = document.querySelector('#usersTable tbody');
+    if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;">No users match the criteria.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = filtered.map(user => `
+        <tr>
+            <td>${user.name}</td>
+            <td>${user.profile || ''}</td>
+            <td><span class="status-badge ${user.disabled === 'true' ? 'status-disabled' : 'status-active'}">${user.disabled === 'true' ? 'Disabled' : 'Active'}</span></td>
+            <td>${user['limit-uptime'] || 'Unlimited'}</td>
+            <td>${formatBytes(user['limit-bytes-total'])}</td>
+            <td>${user.uptime || '0s'}</td>
+            <td>${formatBytes(parseInt(user['bytes-in'] || 0) + parseInt(user['bytes-out'] || 0))}</td>
+            <td>${user.comment || ''}</td>
+            <td style="white-space:nowrap;">
+                <button class="btn btn-primary btn-sm" onclick="openUserModal('${user.name}')"><i class="fas fa-edit"></i></button>
+                <button class="btn btn-danger btn-sm" onclick="deleteUser('${user.name}')"><i class="fas fa-trash"></i></button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function displayProfiles() {
+    const tbody = document.querySelector('#profilesTable tbody');
+     if (currentProfiles.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">No profiles found.</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = currentProfiles.map(p => `
+        <tr>
+            <td>${p.name}</td>
+            <td>${p['rate-limit'] || 'N/A'}</td>
+            <td>${p['session-timeout'] || 'N/A'}</td>
+            <td>${p['shared-users'] || 'N/A'}</td>
+            <td style="white-space:nowrap;">
+                 <button class="btn btn-primary btn-sm" onclick="openProfileModal('${p['.id']}')"><i class="fas fa-edit"></i></button>
+                 <button class="btn btn-danger btn-sm" onclick="deleteProfile('${p['.id']}', '${p.name}')"><i class="fas fa-trash"></i></button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+// --- Event Handlers & Actions ---
+async function handleConfigSave(e) {
+    e.preventDefault();
+    const payload = {
+        mikrotik: {
+            host: document.getElementById('routerHost').value,
+            port: parseInt(document.getElementById('routerPort').value),
+            username: document.getElementById('routerUsername').value,
+            hotspot_login_url: document.getElementById('hotspotLoginUrl').value
+        }
+    };
+    const password = document.getElementById('routerPassword').value;
+    if (password) payload.mikrotik.password = password;
+
+    const result = await apiCall('/config', { method: 'POST', body: JSON.stringify(payload) });
+    if(result) {
+        showAlert('globalAlert', 'success', 'Configuration saved! Testing new connection...');
+        await checkConnection();
+    }
+}
+
+async function handleCreateUser(e) {
+    e.preventDefault();
+    const payload = {
+        name: document.getElementById('username').value,
+        password: document.getElementById('password').value,
+        profile: document.getElementById('profile').value,
+        'limit-uptime': document.getElementById('timeLimit').value,
+        'limit-bytes-total': document.getElementById('dataLimit').value ? parseInt(document.getElementById('dataLimit').value) * 1024 * 1024 : null,
+        comment: document.getElementById('comment').value,
+    };
+    const result = await apiCall('/users', { method: 'POST', body: JSON.stringify(payload) });
+    if(result && result.success) {
+        showAlert('globalAlert', 'success', 'User created successfully!');
+        e.target.reset();
+        await loadUsers();
+        await loadDashboardStats();
+    }
+}
+
+async function handleBulkCreateUsers(e) {
+    e.preventDefault();
+    const form = e.target;
+    const payload = {
+        number_of_users: parseInt(document.getElementById('bulkNumberOfUsers').value),
+        profile: document.getElementById('bulkProfile').value,
+        'limit-uptime': document.getElementById('bulkTimeLimit').value || null,
+        'limit-bytes-total': document.getElementById('bulkDataLimit').value ? parseInt(document.getElementById('bulkDataLimit').value) * 1024 * 1024 : null,
+        comment_prefix: document.getElementById('bulkCommentPrefix').value, // This is the batch name/comment
+        username_prefix: document.getElementById('bulkUsernamePrefix').value,
+        username_length: parseInt(document.getElementById('bulkUsernameLength').value),
+        username_charset: document.getElementById('bulkUsernameCharset').value,
+        password_length: parseInt(document.getElementById('bulkPasswordLength').value),
+        password_charset: document.getElementById('bulkPasswordCharset').value
+    };
+
+    const exportHTMLBtn = document.getElementById('exportVouchersHTMLButton');
+    const exportPDFBtn = document.getElementById('exportVouchersPDFButton'); 
+    const resultDisplayDiv = document.getElementById('bulkCreateResultDisplay');
+    const credentialsTextArea = document.getElementById('bulkCreateCredentials');
+
+    // Always hide buttons and result display initially on new submission
+    if(exportHTMLBtn) exportHTMLBtn.style.display = 'none';
+    if(exportPDFBtn) exportPDFBtn.style.display = 'none';
+    resultDisplayDiv.style.display = 'none';
+    credentialsTextArea.value = '';
+    lastGeneratedBatchCredentials = []; // Clear previous batch
+
+
+    const result = await apiCall('/bulk-create-users', { method: 'POST', body: JSON.stringify(payload) });
+    if (result) {
+        showAlert('globalAlert', result.success ? 'success' : 'danger', result.message);
+        if (result.created_credentials && result.created_credentials.length > 0) {
+            lastGeneratedBatchCredentials = result.created_credentials; // Store for printing/viewing
+            resultDisplayDiv.style.display = 'block';
+            credentialsTextArea.value = result.created_credentials
+                .map(c => `Username: ${c.username}\tPassword: ${c.password}`)
+                .join('\n');
+            if(exportHTMLBtn) exportHTMLBtn.style.display = 'inline-flex'; 
+            if(exportPDFBtn) exportPDFBtn.style.display = 'inline-flex'; 
+            await loadUsers(); // Refresh user list as new users were added
+            await loadDashboardStats(); // Refresh stats
+        } else {
+            // Ensure buttons are hidden if no credentials or error
+            if(exportHTMLBtn) exportHTMLBtn.style.display = 'none';
+            if(exportPDFBtn) exportPDFBtn.style.display = 'none';
+        }
+    } else {
+        // If apiCall returns null (e.g. network error), ensure buttons and results area are hidden
+        if(exportHTMLBtn) exportHTMLBtn.style.display = 'none';
+        if(exportPDFBtn) exportPDFBtn.style.display = 'none';
+        resultDisplayDiv.style.display = 'none'; 
+    }
+}
+
+async function handleEditUser(e) {
+    e.preventDefault();
+    const username = document.getElementById('editUsernameOrig').value;
+    const payload = {
+        profile: document.getElementById('editProfile').value,
+        'limit-uptime': document.getElementById('editTimeLimit').value,
+        'limit-bytes-total': document.getElementById('editDataLimit').value ? parseInt(document.getElementById('editDataLimit').value) * 1024 * 1024 : null,
+        comment: document.getElementById('editComment').value,
+        disabled: document.getElementById('editDisabled').checked,
+    };
+    const password = document.getElementById('editPassword').value;
+    if (password) payload.password = password;
+
+    const result = await apiCall(`/users/${username}`, { method: 'PUT', body: JSON.stringify(payload) });
+    if(result && result.success) {
+        showAlert('globalAlert', 'success', 'User updated successfully!');
+        closeModal('userModal');
+        await loadUsers();
+    }
+}
+
+async function handleProfileSave(e) {
+    e.preventDefault();
+    const profileId = document.getElementById('profileId').value;
+    const payload = {
+        name: document.getElementById('profileName').value,
+        'rate-limit': document.getElementById('profileRateLimit').value,
+        'session-timeout': document.getElementById('profileSessionTimeout').value,
+        'shared-users': document.getElementById('profileSharedUsers').value,
+    };
+    
+    const url = profileId ? `/profiles/${profileId}` : '/profiles';
+    const method = profileId ? 'PUT' : 'POST';
+
+    const result = await apiCall(url, { method, body: JSON.stringify(payload) });
+    if (result && result.success) {
+        showAlert('globalAlert', 'success', `Profile ${profileId ? 'updated' : 'created'} successfully!`);
+        closeModal('profileModal');
+        await loadProfiles();
+    }
+}
+
+async function deleteUser(username) {
+    if (!confirm(`Are you sure you want to delete user "${username}"?`)) return;
+    const result = await apiCall(`/users/${username}`, { method: 'DELETE' });
+    if(result && result.success) {
+        showAlert('globalAlert', 'success', `User "${username}" deleted.`);
+        await loadUsers();
+        await loadDashboardStats();
+    }
+}
+
+async function disconnectUser(activeId) {
+    const session = currentSessions.find(s => s['.id'] === activeId);
+    if (!confirm(`Are you sure you want to disconnect user "${session.user}"?`)) return;
+    const result = await apiCall(`/disconnect-user/${activeId}`, { method: 'POST' });
+    if (result && result.success) {
+        showAlert('globalAlert', 'success', `User disconnected.`);
+        await loadActiveSessions();
+        await loadDashboardStats();
+    }
+}
+
+async function deleteProfile(id, name) {
+    if (!confirm(`Are you sure you want to delete profile "${name}"? This cannot be undone.`)) return;
+    const result = await apiCall(`/profiles/${id}`, { method: 'DELETE' });
+    if (result && result.success) {
+        showAlert('globalAlert', 'success', `Profile "${name}" deleted.`);
+        await loadProfiles();
+    }
+}
+
+async function deleteExpiredUsers() {
+    if (!confirm(getTranslation('confirmDeleteExpiredUsers'))) return;
+    const result = await apiCall('/delete-expired-users', { method: 'POST' });
+    if(result && result.success) {
+        showAlert('globalAlert', 'success', result.message + (result.deleted_count ? ` Deleted ${result.deleted_count} user(s).` : ''));
+        await loadUsers();
+        await loadDashboardStats();
+    } else if (result) { // API call was made, but operation wasn't successful (e.g. success:false from backend)
+        showAlert('globalAlert', 'warning', result.message || getTranslation('Operation failed, no users deleted.'));
+    }
+    // If result is null (apiCall failed due to network etc.), apiCall itself shows an alert.
+}
+
+async function handleDeleteUsersByProfile() {
+    const profileSelect = document.getElementById('deleteByProfileSelect');
+    const profileName = profileSelect.value;
+
+    if (!profileName) {
+        showAlert('globalAlert', 'warning', getTranslation('Please select a profile to delete users from.'));
+        return;
+    }
+
+    if (!confirm(getTranslation('Are you sure you want to delete ALL users from profile "{0}"? This action cannot be undone and is permanent.').replace('{0}', profileName))) {
+        return;
+    }
+
+    const result = await apiCall(`/users/delete-by-profile/${encodeURIComponent(profileName)}`, { method: 'DELETE' });
+
+    if (result && result.success) {
+        // Assuming result.message is already translated by the backend
+        showAlert('globalAlert', 'success', result.message || getTranslation('Successfully processed users for profile {0}. Deleted {1} user(s).', profileName, result.deleted_count));
+        await loadUsers();
+        await loadDashboardStats();
+    } else if (result) { 
+        showAlert('globalAlert', 'danger', result.message || getTranslation('Failed to delete users from profile {0}.', profileName));
+    }
+}
+
+async function handleDeleteUsersByStatus() {
+    const statusSelect = document.getElementById('deleteByStatusSelect');
+    const status = statusSelect.value; // 'active' or 'disabled'
+
+    if (!status) {
+        showAlert('globalAlert', 'warning', getTranslation('Please select a user status to delete.'));
+        return;
+    }
+    
+    const statusText = status === 'disabled' ? getTranslation('Disabled') : getTranslation('Active');
+
+    if (!confirm(getTranslation('Are you sure you want to delete all {0} users? This action cannot be undone and is permanent.').replace('{0}', statusText))) {
+        return;
+    }
+
+    const result = await apiCall(`/users/delete-by-active-status/${status}`, { method: 'DELETE' });
+
+    if (result && result.success) {
+        showAlert('globalAlert', 'success', result.message || getTranslation('Successfully processed {0} users. Deleted {1} user(s).', statusText, result.deleted_count));
+        await loadUsers();
+        await loadDashboardStats();
+    } else if (result) {
+        showAlert('globalAlert', 'danger', result.message || getTranslation('Failed to delete {0} users.', statusText));
+    }
+}
+
+function triggerExport(format) {
+    const profileFilter = document.getElementById('exportProfileFilter').value;
+    let url = `${API_BASE_URL}/api/export-users?format=${format}`;
+    if (profileFilter) {
+        url += `&profile_filter=${encodeURIComponent(profileFilter)}`;
+    }
+    window.open(url, '_blank');
+}
+
+async function testConnection() {
+    const button = event.target;
+    button.innerHTML = '<span class="loading-spinner"></span> Testing...';
+    button.disabled = true;
+    await checkConnection();
+    button.innerHTML = '<i class="fas fa-plug"></i> Test';
+    button.disabled = false;
+}
+
+// --- Modals & UI Helpers ---
+function openUserModal(username) {
+    const user = currentUsers.find(u => u.name === username);
+    if (!user) return;
+    
+    document.getElementById('editUsernameOrig').value = user.name;
+    document.getElementById('editUsernameDisplay').textContent = user.name;
+    document.getElementById('editPassword').value = '';
+    document.getElementById('editProfile').value = user.profile;
+    document.getElementById('editTimeLimit').value = user['limit-uptime'] || '';
+    document.getElementById('editDataLimit').value = user['limit-bytes-total'] ? parseInt(user['limit-bytes-total']) / 1024 / 1024 : '';
+    document.getElementById('editComment').value = user.comment || '';
+    document.getElementById('editDisabled').checked = user.disabled === 'true';
+
+    document.getElementById('userModal').style.display = 'block';
+}
+
+function openProfileModal(profileId = null) {
+    const form = document.getElementById('profileForm');
+    form.reset();
+    document.getElementById('profileId').value = '';
+    
+    if (profileId) {
+        const profile = currentProfiles.find(p => p['.id'] === profileId);
+        if (profile) {
+            document.getElementById('profileModalTitle').textContent = `Edit Profile: ${profile.name}`;
+            document.getElementById('profileId').value = profile['.id'];
+            document.getElementById('profileName').value = profile.name;
+            document.getElementById('profileRateLimit').value = profile['rate-limit'] || '';
+            document.getElementById('profileSessionTimeout').value = profile['session-timeout'] || '';
+            document.getElementById('profileSharedUsers').value = profile['shared-users'] || '';
+        }
+    } else {
+        document.getElementById('profileModalTitle').textContent = 'Add New Profile';
+    }
+    document.getElementById('profileModal').style.display = 'block';
+}
+
+function closeModal(modalId) {
+    document.getElementById(modalId).style.display = 'none';
+}
+
+window.onclick = function(event) {
+    if (event.target.classList.contains('modal')) {
+        event.target.style.display = 'none';
+    }
+}
+
+function showAlert(elementId, type, message) {
+    const alert = document.getElementById(elementId);
+    if (!alert) return;
+    alert.className = `alert alert-${type}`;
+    alert.innerHTML = message;
+    alert.style.display = 'block';
+    setTimeout(() => { alert.style.display = 'none'; }, 5000);
+}
+
+let spinnerTimeout;
+function showGlobalSpinner(show) {
+    const statusEl = document.getElementById('connectionStatus');
+    if (!statusEl) return;
+
+    clearTimeout(spinnerTimeout);
+    if (show) {
+        statusEl.innerHTML = '<span class="loading-spinner"></span>';
+    } else {
+        // Delay hiding spinner to prevent flickering on fast calls
+        spinnerTimeout = setTimeout(() => {
+            if (statusEl.innerHTML.includes('spinner')) {
+                // If it's still a spinner, default to disconnected
+                statusEl.innerHTML = `<i class="fas fa-exclamation-triangle"></i><span> Disconnected</span>`;
+                statusEl.className = 'disconnected';
+            }
+        }, 250);
+    }
+}
+
+// --- Analytics Tab Specific Functions ---
+async function loadAnalyticsData() {
+    logger.info("Loading analytics data...");
+    const totalDataEl = document.getElementById('analyticsTotalData');
+    if (totalDataEl) totalDataEl.textContent = 'Total Data Transferred: Loading...';
+    
+    const data = await apiCall('/analytics/basic_summary');
+    if (!data) {
+        if(totalDataEl) totalDataEl.textContent = 'Total Data Transferred: Error loading data';
+        return;
+    }
+    
+    if (totalDataEl) totalDataEl.textContent = 'Total Data Transferred: ' + formatBytes(data.total_data_all_users);
+    
+    // Render Profile Usage Chart (Pie)
+    const profileCtx = document.getElementById('profileUsageChart').getContext('2d');
+    if (profileUsageChartInstance) {
+        profileUsageChartInstance.destroy();
+    }
+    const profileData = data.data_usage_by_profile || {};
+    profileUsageChartInstance = new Chart(profileCtx, {
+        type: 'pie',
+        data: {
+            labels: Object.keys(profileData),
+            datasets: [{
+                label: 'Data Usage',
+                data: Object.values(profileData),
+                backgroundColor: [ // Add some colors
+                    '#0d6efd', '#198754', '#ffc107', '#dc3545', '#6c757d', 
+                    '#0dcaf0', '#6610f2', '#fd7e14'
+                ],
+                hoverOffset: 4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            let label = context.label || '';
+                            if (label) {
+                                label += ': ';
+                            }
+                            if (context.parsed !== null) {
+                                label += formatBytes(context.parsed);
+                            }
+                            return label;
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // Render Top Users Chart (Bar)
+    const topUsersCtx = document.getElementById('topUsersChart').getContext('2d');
+    if (topUsersChartInstance) {
+        topUsersChartInstance.destroy();
+    }
+    const topUsers = data.all_users_sorted_by_data.slice(0, 10);
+    topUsersChartInstance = new Chart(topUsersCtx, {
+        type: 'bar',
+        data: {
+            labels: topUsers.map(u => u.name),
+            datasets: [{
+                label: 'Total Data Usage',
+                data: topUsers.map(u => u.total_data),
+                backgroundColor: '#198754'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return formatBytes(value);
+                        }
+                    }
+                }
+            },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            let label = context.dataset.label || '';
+                             if (label) {
+                                label += ': ';
+                            }
+                            if (context.parsed.y !== null) {
+                                label += formatBytes(context.parsed.y);
+                            }
+                            return label;
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+
+function formatBytes(bytes) {
+    if (bytes === null || bytes === undefined || bytes === '' || isNaN(bytes)) return 'Unlimited';
+    const numBytes = Number(bytes);
+    if (numBytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(numBytes) / Math.log(k));
+    return `${parseFloat((numBytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+}
+</script>
+</body>
+</html>

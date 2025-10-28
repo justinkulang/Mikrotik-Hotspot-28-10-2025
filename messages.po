@@ -1,0 +1,55 @@
+# Arabic translations for Hotspot Manager v2.
+# Copyright (C) 2024 The IT Dad
+# This file is distributed under the same license as the Hotspot Manager v2 project.
+# The IT Dad <justinkulang@gmail.com>, 2024.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Hotspot Manager v2 1.0\n"
+"Report-Msgid-Bugs-To: justinkulang@gmail.com\n"
+"POT-Creation-Date: 2024-07-15 10:00+0000\n"
+"PO-Revision-Date: 2024-07-15 10:00+0000\n"
+"Last-Translator: The IT Dad <justinkulang@gmail.com>\n"
+"Language-Team: Arabic <ar@li.org>\n"
+"Language: ar\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Manual\n"
+"Plural-Forms: nplurals=6; plural=(n==0 ? 0 : n==1 ? 1 : n==2 ? 2 : n%100>=3 && n%100<=10 ? 3 : n%100>=11 ? 4 : 5);\n"
+
+msgid "Connect to Mikrotik Router"
+msgstr "اتصل بجهاز التوجيه Mikrotik"
+
+msgid "Router IP Address"
+msgstr "عنوان IP لجهاز التوجيه"
+
+msgid "Username"
+msgstr "اسم المستخدم"
+
+msgid "Password"
+msgstr "كلمة المرور"
+
+msgid "Connect"
+msgstr "اتصال"
+
+msgid "Dashboard"
+msgstr "لوحة التحكم"
+
+msgid "Total Users"
+msgstr "إجمالي المستخدمين"
+
+msgid "Save"
+msgstr "حفظ"
+
+msgid "Network error or server is unreachable."
+msgstr "خطأ في الشبكة أو الخادم غير قابل للوصول."
+
+msgid "User created successfully"
+msgstr "تم إنشاء المستخدم بنجاح"
+
+msgid "Unlimited"
+msgstr "غير محدود"
+
+msgid "Hotspot Manager"
+msgstr "مدير الهوت سبوت"
