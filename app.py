@@ -20,6 +20,11 @@ from flask import Response
 import base64
 import copy
 from crypto import load_key, encrypt_password, decrypt_password
+from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+from models import db, User
+from functools import wraps
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -58,7 +63,27 @@ except ImportError:
 
 
 app = Flask(__name__)
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'a_secure_random_secret_key')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///hotspot.db')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 CORS(app)
+
+db.init_app(app)
+migrate = Migrate(app, db)
+login_manager = LoginManager(app)
+login_manager.login_view = 'login_page'
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated or current_user.role != 'admin':
+            return jsonify({'message': 'Admins only!'}), 403
+        return f(*args, **kwargs)
+    return decorated_function
 
 # Language configuration
 app.config['LANGUAGES'] = ['en', 'ar', 'fr']
@@ -126,21 +151,26 @@ class ConfigLoader:
             return default_config
 
     def get_config(self):
+        logger.debug(f"Getting config: {self.config}")
         return self.config
 
     def update_config(self, new_config):
         # Update mikrotik config, encrypting password if it exists
         if 'mikrotik' in new_config:
+            logger.debug(f"Updating mikrotik config with: {new_config['mikrotik']}")
             if 'password' in new_config['mikrotik']:
                 new_config['mikrotik']['password'] = encrypt_password(new_config['mikrotik']['password'], self.key)
             self.config['mikrotik'].update(new_config['mikrotik'])
 
         # Update server config
         if 'server' in new_config:
+            logger.debug(f"Updating server config with: {new_config['server']}")
             self.config['server'].update(new_config['server'])
 
         with open(self.config_file, 'w') as f:
             json.dump(self.config, f, indent=4)
+        logger.debug("Configuration saved to config.json")
+        self.config = self._load_config()
 
     def reset_mikrotik_config_to_defaults(self):
         """Resets the Mikrotik part of the configuration to its original defaults."""
@@ -178,35 +208,56 @@ config_loader = ConfigLoader()
 app_config = config_loader.get_config()
 
 # Define exempt endpoints that do not require a Mikrotik connection
-EXEMPT_ENDPOINTS = {'login_page', 'initial_connect', 'static'} # 'static' is Flask's default for static files
+EXEMPT_ENDPOINTS = {
+    'login_page', 'initial_connect', 'static', 'login', 'auth_logout',
+    'auth_status', 'users_page', 'get_dashboard_users', 'create_dashboard_user',
+    'get_dashboard_user', 'update_dashboard_user', 'delete_dashboard_user',
+    'setup_page'
+} # 'static' is Flask's default for static files
+
+def is_configured():
+    """Check if the Mikrotik router has been configured."""
+    config = config_loader.get_config()
+    # A simple check: if the host is still the default, it's not configured.
+    return config['mikrotik']['host'] != '192.168.88.1'
 
 @app.before_request
-def require_mikrotik_connection():
-    logger.debug(f"before_request: endpoint='{request.endpoint}', path='{request.path}'")
-    # If the requested endpoint is exempt, do nothing.
+def routing_checks():
+    # Endpoints that are part of the initial setup process
+    SETUP_ENDPOINTS = {'setup_page', 'initial_connect', 'static'}
+
+    # 1. Check for initial configuration.
+    # If the app is not configured, redirect any request that isn't part of the setup process
+    # to the setup page.
+    if not is_configured():
+        if request.endpoint not in SETUP_ENDPOINTS:
+            logger.info(f"App not configured. Redirecting endpoint '{request.endpoint}' to setup page.")
+            return redirect(url_for('setup_page'))
+        else:
+            # If the request is for a setup endpoint, allow it to proceed.
+            return
+
+    # 2. If configured, proceed with the original logic.
+    # Now, check if the endpoint requires a live Mikrotik connection.
     if request.endpoint in EXEMPT_ENDPOINTS:
-        logger.debug(f"before_request: Endpoint '{request.endpoint}' is exempt. Allowing request.")
-        return
-    
-    # For specific file requests that might not have typical endpoints (e.g. favicon.ico)
-    # This is a bit of a catch-all; ideally, static assets are handled by 'static' endpoint.
-    # This check should ideally be more specific or rely on Flask's static handling.
-    if '.' in request.path and not request.endpoint: # request.endpoint might be None for unhandled paths
-        logger.debug(f"before_request: Path '{request.path}' appears to be a file request and has no specific endpoint. Allowing.")
+        logger.debug(f"Endpoint '{request.endpoint}' is exempt from live connection check.")
         return
 
-    logger.debug(f"before_request: Endpoint '{request.endpoint}' requires Mikrotik connection check.")
-    # Try to establish a connection. get_mikrotik_api will return None on failure.
-    api = get_mikrotik_api() 
+    # This part handles endpoints that DO require a live connection.
+    logger.debug(f"Endpoint '{request.endpoint}' requires Mikrotik connection check.")
+    
+    # Allow file-like paths (e.g., favicon.ico) to pass through.
+    if '.' in request.path and not request.endpoint:
+        logger.debug(f"Path '{request.path}' appears to be a file request. Allowing.")
+        return
+
+    # Try to establish a connection.
+    api = get_mikrotik_api()
     if api is None:
         logger.warning(f"No active Mikrotik connection for endpoint '{request.endpoint}'. API is None. Redirecting to login.")
-        # Using url_for with the function name of the route
-        return redirect(url_for('login_page')) 
-        # The 'login_page' is the function name for the @app.route('/') route.
+        return redirect(url_for('login_page'))
     else:
-        logger.debug(f"before_request: Mikrotik API obtained for endpoint '{request.endpoint}'. Allowing request.")
-        # Explicitly return None, which means the request is allowed to proceed.
-        # Not returning anything (implicit None) is the standard way.
+        logger.debug("Mikrotik API obtained. Allowing request.")
         return
 
 
@@ -930,16 +981,97 @@ def generate_qr_code_base64(login_url, username, password):
     return base64.b64encode(buffered.getvalue()).decode('utf-8')
 
 # --- Flask Routes ---
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    data = request.json
+    username = data.get('username')
+    password = data.get('password')
+    user = User.query.filter_by(username=username).first()
+    if user and user.check_password(password):
+        login_user(user)
+        return jsonify({'success': True, 'user': {'username': user.username, 'role': user.role}})
+    return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
+
+@app.route('/api/auth/logout', methods=['POST'])
+@login_required
+def auth_logout():
+    logout_user()
+    return jsonify({'success': True})
+
+@app.route('/api/auth/status', methods=['GET'])
+def auth_status():
+    if current_user.is_authenticated:
+        return jsonify({'is_logged_in': True, 'user': {'username': current_user.username, 'role': current_user.role}})
+    return jsonify({'is_logged_in': False})
+
 @app.route('/')
 def login_page():
     """Serves the login page."""
     return send_from_directory(get_base_path(), 'login.html')
 
+@app.route('/setup')
+def setup_page():
+    """Serves the initial setup page."""
+    return send_from_directory(get_base_path(), 'setup.html')
+
 @app.route('/dashboard')
+@login_required
 def index():
     """Serves the main dashboard page."""
-    # TODO: Add authentication check here in a later step
     return send_from_directory(get_base_path(), 'mikrotik_userman_dashboard.html')
+
+@app.route('/users')
+@login_required
+def users_page():
+    """Serves the user management page."""
+    return send_from_directory(get_base_path(), 'users.html')
+
+@app.route('/api/users', methods=['GET'])
+@login_required
+@admin_required
+def get_dashboard_users():
+    users = User.query.all()
+    return jsonify([{'id': u.id, 'username': u.username, 'role': u.role} for u in users])
+
+@app.route('/api/users', methods=['POST'])
+@login_required
+@admin_required
+def create_dashboard_user():
+    data = request.json
+    user = User(username=data['username'], role=data['role'])
+    user.set_password(data['password'])
+    db.session.add(user)
+    db.session.commit()
+    return jsonify({'message': 'User created successfully'})
+
+@app.route('/api/users/<int:user_id>', methods=['GET'])
+@login_required
+@admin_required
+def get_dashboard_user(user_id):
+    user = User.query.get_or_404(user_id)
+    return jsonify({'id': user.id, 'username': user.username, 'role': user.role})
+
+@app.route('/api/users/<int:user_id>', methods=['PUT'])
+@login_required
+@admin_required
+def update_dashboard_user(user_id):
+    user = User.query.get_or_404(user_id)
+    data = request.json
+    user.username = data['username']
+    user.role = data['role']
+    if data.get('password'):
+        user.set_password(data['password'])
+    db.session.commit()
+    return jsonify({'message': 'User updated successfully'})
+
+@app.route('/api/users/<int:user_id>', methods=['DELETE'])
+@login_required
+@admin_required
+def delete_dashboard_user(user_id):
+    user = User.query.get_or_404(user_id)
+    db.session.delete(user)
+    db.session.commit()
+    return jsonify({'message': 'User deleted successfully'})
 
 @app.route('/api/initial-connect', methods=['POST'])
 def initial_connect():
@@ -961,8 +1093,10 @@ def initial_connect():
         return jsonify({'success': False, 'message': 'Invalid port number. Must be between 0 and 65535.'}), 400
 
     logger.info(f"Attempting initial connection to Mikrotik: {host}:{port} with user: {username}")
+    logger.debug(f"Received login request with data: {data}")
     try:
         # Attempt connection
+        logger.debug("Attempting to establish a temporary connection...")
         temp_conn = librouteros.connect(
             host=host,
             username=username,
@@ -982,8 +1116,10 @@ def initial_connect():
             "use_ssl": app_config['mikrotik'].get('use_ssl', False), # Preserve existing SSL setting
             "hotspot_login_url": app_config['mikrotik'].get('hotspot_login_url', '') # Preserve existing
         }
+        logger.debug(f"Calling update_config with: {new_mikrotik_config}")
         config_loader.update_config({'mikrotik': new_mikrotik_config})
         app_config = config_loader.get_config() # Reload app_config to reflect changes
+        logger.debug(f"app_config after update: {app_config}")
 
 
         return jsonify({'success': True, 'message': 'Successfully connected and configuration saved.'})
@@ -1020,12 +1156,15 @@ def get_config_route():
     return jsonify(cfg)
 
 @app.route('/api/config', methods=['POST'])
+@login_required
+@admin_required
 def update_config_route():
     data = request.json
     config_loader.update_config(data)
     return jsonify({'success': True, 'message': 'Configuration updated and saved.'})
 
 @app.route('/api/dashboard-stats', methods=['GET'])
+@login_required
 def get_dashboard_stats():
     users = router_os_service.get_hotspot_users()
     sessions = router_os_service.get_active_sessions()
@@ -1033,12 +1172,14 @@ def get_dashboard_stats():
     active_sessions = len(sessions)
     return jsonify({'total_users': total_users, 'active_sessions': active_sessions})
 
-@app.route('/api/users', methods=['GET'])
+@app.route('/api/hotspot/users', methods=['GET'])
+@login_required
 def get_users():
     users = router_os_service.get_hotspot_users()
     return jsonify({'users': users})
 
-@app.route('/api/users', methods=['POST'])
+@app.route('/api/hotspot/users', methods=['POST'])
+@login_required
 def create_user():
     data = request.json
     username = data.get('name')
@@ -1050,6 +1191,8 @@ def create_user():
     return jsonify({'success': success, 'message': message})
     
 @app.route('/api/bulk-create-users', methods=['POST'])
+@login_required
+@admin_required
 def bulk_create_users():
     data = request.json
     number_of_users = data.get('number_of_users')
@@ -1118,7 +1261,8 @@ def bulk_create_users():
         'errors': errors
     })
 
-@app.route('/api/users/<username>', methods=['PUT'])
+@app.route('/api/hotspot/users/<username>', methods=['PUT'])
+@login_required
 def edit_user(username: str):
     data = request.json
     if 'disabled' in data:
@@ -1127,22 +1271,29 @@ def edit_user(username: str):
     success, message = router_os_service.edit_hotspot_user(username, data)
     return jsonify({'success': success, 'message': message})
 
-@app.route('/api/users/<username>', methods=['DELETE'])
+@app.route('/api/hotspot/users/<username>', methods=['DELETE'])
+@login_required
+@admin_required
 def delete_user(username: str):
     success, message = router_os_service.delete_hotspot_user(username)
     return jsonify({'success': success, 'message': message})
 
 @app.route('/api/active-sessions', methods=['GET'])
+@login_required
 def get_active_sessions_route():
     sessions = router_os_service.get_active_sessions()
     return jsonify({'sessions': sessions})
 
 @app.route('/api/disconnect-user/<active_id>', methods=['POST'])
+@login_required
+@admin_required
 def disconnect_user_session(active_id: str):
     success, message = router_os_service.disconnect_user(active_id)
     return jsonify({'success': success, 'message': message})
 
 @app.route('/api/delete-expired-users', methods=['POST'])
+@login_required
+@admin_required
 def delete_expired_users_route():
     success, message, count = router_os_service.find_and_delete_expired_users()
     return jsonify({'success': success, 'message': message, 'deleted_count': count})
@@ -1186,11 +1337,14 @@ def delete_users_by_active_status_route(status: str):
 
 # --- Profile Management Routes ---
 @app.route('/api/profiles', methods=['GET'])
+@login_required
 def get_profiles_route():
     profiles = router_os_service.get_user_profiles()
     return jsonify({'profiles': profiles})
 
 @app.route('/api/profiles', methods=['POST'])
+@login_required
+@admin_required
 def create_profile_route():
     data = request.json
     if not data.get('name'):
@@ -1199,6 +1353,8 @@ def create_profile_route():
     return jsonify({'success': success, 'message': message})
 
 @app.route('/api/profiles/<profile_id>', methods=['PUT'])
+@login_required
+@admin_required
 def edit_profile_route(profile_id: str):
     data = request.json
     if not data:
@@ -1207,12 +1363,15 @@ def edit_profile_route(profile_id: str):
     return jsonify({'success': success, 'message': message})
 
 @app.route('/api/profiles/<profile_id>', methods=['DELETE'])
+@login_required
+@admin_required
 def delete_profile_route(profile_id: str):
     success, message = router_os_service.delete_hotspot_profile(profile_id)
     return jsonify({'success': success, 'message': message})
 
 # --- UNIFIED EXPORT ROUTE ---
 @app.route('/api/export-users', methods=['GET'])
+@login_required
 def export_users_route():
     export_format = request.args.get('format', 'json').lower()
     profile_filter = request.args.get('profile_filter')
@@ -1280,6 +1439,7 @@ def export_users_route():
         return jsonify({"success": False, "message": _("Invalid export format.")}), 400
 
 @app.route('/api/analytics/basic_summary', methods=['GET'])
+@login_required
 def get_basic_analytics_summary_route():
     try:
         # The require_mikrotik_connection before_request handler should ensure
@@ -1420,3 +1580,15 @@ if __name__ == '__main__':
 
     # Note: This is a development server. For production, use a WSGI server like Gunicorn.
     app.run(host=host, port=port, debug=debug)
+
+@app.cli.command("create-admin")
+def create_admin():
+    """Creates a new admin user."""
+    import getpass
+    username = input("Enter username: ")
+    password = getpass.getpass("Enter password: ")
+    user = User(username=username, role='admin')
+    user.set_password(password)
+    db.session.add(user)
+    db.session.commit()
+    print(f"Admin user {username} created successfully.")

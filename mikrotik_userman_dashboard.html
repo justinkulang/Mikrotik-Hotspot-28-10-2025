@@ -166,14 +166,16 @@
             <li><a href="#" class="nav-link" data-tab="create"><i class="fas fa-user-plus"></i><span>Create</span></a></li>
             <li><a href="#" class="nav-link" data-tab="sessions"><i class="fas fa-wifi"></i><span>Active Sessions</span></a></li>
             <li><a href="#" class="nav-link" data-tab="analytics"><i class="fas fa-chart-line"></i><span>Analytics</span></a></li>
-            <li><a href="#" class="nav-link" data-tab="maintenance"><i class="fas fa-tools"></i><span>Maintenance</span></a></li>
-            <li><a href="#" class="nav-link" data-tab="settings"><i class="fas fa-cog"></i><span>Settings</span></a></li>
+            <li id="maintenance-nav"><a href="#" class="nav-link" data-tab="maintenance"><i class="fas fa-tools"></i><span>Maintenance</span></a></li>
+            <li id="settings-nav"><a href="#" class="nav-link" data-tab="settings"><i class="fas fa-cog"></i><span>Settings</span></a></li>
+            <li id="user-management-nav"><a href="/users" class="nav-link"><i class="fas fa-users-shield"></i><span>Manage Users</span></a></li>
             <li><a href="#" id="logoutButton" class="nav-link"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a></li>
         </ul>
         <div class="sidebar-footer" style="text-align: center; padding: 15px 10px; font-size: 0.85em; color: #495057; border-top: 1px solid #dee2e6; margin-top: auto;">
-            <p style="margin-bottom: 5px;"><strong>The IT Dad</strong></p>
-            <p style="margin-bottom: 3px; font-size: 0.95em;">+(211) 923 616 820</p>
-            <p style="font-size: 0.95em;"><a href="mailto:justinkulang@gmail.com" style="color: var(--primary-color); text-decoration: none;">justinkulang@gmail.com</a></p>
+            <div id="userInfo" style="margin-bottom: 10px;">
+                <i class="fas fa-user-circle"></i> <span id="usernameDisplay"></span> (<span id="userRoleDisplay"></span>)
+            </div>
+            <a href="#" id="dashboardLogoutButton" style="color: var(--danger-color); text-decoration: none;"><i class="fas fa-sign-out-alt"></i> Logout</a>
         </div>
     </aside>
     <main class="main-content">
@@ -423,6 +425,10 @@
                     </div>
                 </form>
             </div>
+            <div class="panel">
+                <h3 class="panel-header">User Management</h3>
+                <a href="/users" class="btn btn-primary">Manage Users</a>
+            </div>
         </div>
     </main>
 
@@ -511,6 +517,8 @@ const logger = { // Simple logger
 
 // --- Init & Navigation ---
 document.addEventListener('DOMContentLoaded', () => {
+    checkAuth();
+
     document.querySelectorAll('.nav-link').forEach(link => {
         link.addEventListener('click', e => {
             e.preventDefault();
@@ -668,6 +676,31 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
+async function checkAuth() {
+    try {
+        const response = await fetch('/api/auth/status');
+        if (response.status === 401) {
+            window.location.href = '/';
+            return;
+        }
+        const data = await response.json();
+        if (!data.is_logged_in) {
+            window.location.href = '/';
+        } else {
+            document.getElementById('usernameDisplay').textContent = data.user.username;
+            document.getElementById('userRoleDisplay').textContent = data.user.role;
+            if (data.user.role !== 'admin') {
+                document.getElementById('maintenance-nav').style.display = 'none';
+                document.getElementById('settings-nav').style.display = 'none';
+                document.getElementById('user-management-nav').style.display = 'none';
+            }
+        }
+    } catch (error) {
+        console.error('Auth check failed', error);
+        window.location.href = '/';
+    }
+}
+
 async function init() {
     // Fetch translations first
     try {
@@ -701,6 +734,12 @@ async function init() {
              loadActiveSessions();
         }
     }, 60000);
+
+    document.getElementById('dashboardLogoutButton').addEventListener('click', async (e) => {
+        e.preventDefault();
+        await apiCall('/auth/logout', { method: 'POST' });
+        window.location.href = '/';
+    });
 }
 
 // --- API & Data Loading ---
@@ -790,7 +829,7 @@ async function loadDashboardStats() {
 async function loadUsers(silent = false) {
     const tbody = document.querySelector('#usersTable tbody');
     if (!silent) tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;"><div class="loading-spinner"></div></td></tr>`;
-    const data = await apiCall('/users');
+    const data = await apiCall('/hotspot/users');
     if (data && data.users) {
         currentUsers = data.users;
         filterAndDisplayUsers();
@@ -1020,7 +1059,7 @@ async function handleCreateUser(e) {
         'limit-bytes-total': document.getElementById('dataLimit').value ? parseInt(document.getElementById('dataLimit').value) * 1024 * 1024 : null,
         comment: document.getElementById('comment').value,
     };
-    const result = await apiCall('/users', { method: 'POST', body: JSON.stringify(payload) });
+    const result = await apiCall('/hotspot/users', { method: 'POST', body: JSON.stringify(payload) });
     if(result && result.success) {
         showAlert('globalAlert', 'success', 'User created successfully!');
         e.target.reset();
@@ -1097,7 +1136,7 @@ async function handleEditUser(e) {
     const password = document.getElementById('editPassword').value;
     if (password) payload.password = password;
 
-    const result = await apiCall(`/users/${username}`, { method: 'PUT', body: JSON.stringify(payload) });
+    const result = await apiCall(`/hotspot/users/${username}`, { method: 'PUT', body: JSON.stringify(payload) });
     if(result && result.success) {
         showAlert('globalAlert', 'success', 'User updated successfully!');
         closeModal('userModal');
@@ -1128,7 +1167,7 @@ async function handleProfileSave(e) {
 
 async function deleteUser(username) {
     if (!confirm(`Are you sure you want to delete user "${username}"?`)) return;
-    const result = await apiCall(`/users/${username}`, { method: 'DELETE' });
+    const result = await apiCall(`/hotspot/users/${username}`, { method: 'DELETE' });
     if(result && result.success) {
         showAlert('globalAlert', 'success', `User "${username}" deleted.`);
         await loadUsers();
