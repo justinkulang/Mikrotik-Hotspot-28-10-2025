@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setup - Hotspot Manager</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #0d6efd;
+            --danger-color: #dc3545;
+            --font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            --border-radius: 0.375rem;
+        }
+        body {
+            font-family: var(--font-family);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f0f2f5;
+            margin: 0;
+            padding: 1rem;
+        }
+        .setup-container {
+            background: #fff;
+            padding: 2rem 2.5rem;
+            border-radius: var(--border-radius);
+            box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.15);
+            width: 100%;
+            max-width: 420px;
+        }
+        .setup-container h2 {
+            text-align: center;
+            color: var(--primary-color);
+            margin-bottom: 1.5rem;
+            font-size: 1.8rem;
+        }
+        .form-group {
+            margin-bottom: 1.25rem;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: #495057;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: 1px solid #ced4da;
+            border-radius: var(--border-radius);
+            box-sizing: border-box;
+            font-size: 1rem;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, .25);
+        }
+        .setup-button {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: var(--border-radius);
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+        .setup-button:hover {
+            background-color: #0b5ed7;
+        }
+        .alert {
+            padding: 0.75rem 1rem;
+            margin-top: 1.5rem;
+            border: 1px solid transparent;
+            border-radius: var(--border-radius);
+            text-align: center;
+            font-size: 0.9rem;
+        }
+        .alert-danger {
+            color: #842029;
+            background-color: #f8d7da;
+            border-color: #f5c2c7;
+        }
+        .alert-success {
+            color: #0f5132;
+            background-color: #d1e7dd;
+            border-color: #badbcc;
+        }
+        .loading-spinner {
+            display: inline-block; width: 1em; height: 1em; vertical-align: -0.125em;
+            border: .2em solid currentColor; border-right-color: transparent;
+            border-radius: 50%; animation: spinner-border .75s linear infinite;
+        }
+        @keyframes spinner-border { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="setup-container">
+        <h2>Initial Setup</h2>
+        <form id="setupForm">
+            <div class="form-group">
+                <label for="host">Router IP Address</label>
+                <input type="text" id="host" required>
+            </div>
+            <div class="form-group">
+                <label for="port">API Port</label>
+                <input type="number" id="port" value="8728" required>
+            </div>
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" value="admin" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password">
+            </div>
+            <button type="submit" class="setup-button">
+                <i class="fas fa-cogs"></i> Connect & Save
+            </button>
+            <div id="errorMessage" class="alert" style="display: none;"></div>
+        </form>
+    </div>
+
+    <script>
+        document.getElementById('setupForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+
+            const host = document.getElementById('host').value;
+            const port = document.getElementById('port').value;
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const errorMessageDiv = document.getElementById('errorMessage');
+            const setupButton = this.querySelector('button[type="submit"]');
+            const originalButtonHTML = setupButton.innerHTML;
+
+            errorMessageDiv.style.display = 'none';
+            errorMessageDiv.className = 'alert';
+
+            if (!host || !port || !username) {
+                errorMessageDiv.textContent = 'All fields except password are required.';
+                errorMessageDiv.className = 'alert alert-danger';
+                errorMessageDiv.style.display = 'block';
+                return;
+            }
+
+            setupButton.disabled = true;
+            setupButton.innerHTML = '<span class="loading-spinner"></span> Connecting...';
+
+            fetch('/api/initial-connect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ host, port, username, password }),
+            })
+            .then(response => response.json().then(data => ({ ok: response.ok, data })))
+            .then(({ ok, data }) => {
+                if (ok && data.success) {
+                    errorMessageDiv.textContent = 'Setup successful! Redirecting to login...';
+                    errorMessageDiv.className = 'alert alert-success';
+                    errorMessageDiv.style.display = 'block';
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 2000);
+                } else {
+                    errorMessageDiv.textContent = data.message || 'Setup failed. Please check your connection details.';
+                    errorMessageDiv.className = 'alert alert-danger';
+                    errorMessageDiv.style.display = 'block';
+                    setupButton.disabled = false;
+                    setupButton.innerHTML = originalButtonHTML;
+                }
+            })
+            .catch(error => {
+                console.error('Setup error:', error);
+                errorMessageDiv.textContent = 'A network error occurred. Please try again.';
+                errorMessageDiv.className = 'alert alert-danger';
+                errorMessageDiv.style.display = 'block';
+                setupButton.disabled = false;
+                setupButton.innerHTML = originalButtonHTML;
+            });
+        });
+    </script>
+</body>
+</html>

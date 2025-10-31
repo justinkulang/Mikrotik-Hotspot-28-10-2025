@@ -208,35 +208,56 @@ config_loader = ConfigLoader()
 app_config = config_loader.get_config()
 
 # Define exempt endpoints that do not require a Mikrotik connection
-EXEMPT_ENDPOINTS = {'login_page', 'initial_connect', 'static'} # 'static' is Flask's default for static files
+EXEMPT_ENDPOINTS = {
+    'login_page', 'initial_connect', 'static', 'login', 'auth_logout',
+    'auth_status', 'users_page', 'get_dashboard_users', 'create_dashboard_user',
+    'get_dashboard_user', 'update_dashboard_user', 'delete_dashboard_user',
+    'setup_page'
+} # 'static' is Flask's default for static files
+
+def is_configured():
+    """Check if the Mikrotik router has been configured."""
+    config = config_loader.get_config()
+    # A simple check: if the host is still the default, it's not configured.
+    return config['mikrotik']['host'] != '192.168.88.1'
 
 @app.before_request
-def require_mikrotik_connection():
-    logger.debug(f"before_request: endpoint='{request.endpoint}', path='{request.path}'")
-    # If the requested endpoint is exempt, do nothing.
+def routing_checks():
+    # Endpoints that are part of the initial setup process
+    SETUP_ENDPOINTS = {'setup_page', 'initial_connect', 'static'}
+
+    # 1. Check for initial configuration.
+    # If the app is not configured, redirect any request that isn't part of the setup process
+    # to the setup page.
+    if not is_configured():
+        if request.endpoint not in SETUP_ENDPOINTS:
+            logger.info(f"App not configured. Redirecting endpoint '{request.endpoint}' to setup page.")
+            return redirect(url_for('setup_page'))
+        else:
+            # If the request is for a setup endpoint, allow it to proceed.
+            return
+
+    # 2. If configured, proceed with the original logic.
+    # Now, check if the endpoint requires a live Mikrotik connection.
     if request.endpoint in EXEMPT_ENDPOINTS:
-        logger.debug(f"before_request: Endpoint '{request.endpoint}' is exempt. Allowing request.")
-        return
-    
-    # For specific file requests that might not have typical endpoints (e.g. favicon.ico)
-    # This is a bit of a catch-all; ideally, static assets are handled by 'static' endpoint.
-    # This check should ideally be more specific or rely on Flask's static handling.
-    if '.' in request.path and not request.endpoint: # request.endpoint might be None for unhandled paths
-        logger.debug(f"before_request: Path '{request.path}' appears to be a file request and has no specific endpoint. Allowing.")
+        logger.debug(f"Endpoint '{request.endpoint}' is exempt from live connection check.")
         return
 
-    logger.debug(f"before_request: Endpoint '{request.endpoint}' requires Mikrotik connection check.")
-    # Try to establish a connection. get_mikrotik_api will return None on failure.
-    api = get_mikrotik_api() 
+    # This part handles endpoints that DO require a live connection.
+    logger.debug(f"Endpoint '{request.endpoint}' requires Mikrotik connection check.")
+    
+    # Allow file-like paths (e.g., favicon.ico) to pass through.
+    if '.' in request.path and not request.endpoint:
+        logger.debug(f"Path '{request.path}' appears to be a file request. Allowing.")
+        return
+
+    # Try to establish a connection.
+    api = get_mikrotik_api()
     if api is None:
         logger.warning(f"No active Mikrotik connection for endpoint '{request.endpoint}'. API is None. Redirecting to login.")
-        # Using url_for with the function name of the route
-        return redirect(url_for('login_page')) 
-        # The 'login_page' is the function name for the @app.route('/') route.
+        return redirect(url_for('login_page'))
     else:
-        logger.debug(f"before_request: Mikrotik API obtained for endpoint '{request.endpoint}'. Allowing request.")
-        # Explicitly return None, which means the request is allowed to proceed.
-        # Not returning anything (implicit None) is the standard way.
+        logger.debug("Mikrotik API obtained. Allowing request.")
         return
 
 
@@ -987,6 +1008,11 @@ def auth_status():
 def login_page():
     """Serves the login page."""
     return send_from_directory(get_base_path(), 'login.html')
+
+@app.route('/setup')
+def setup_page():
+    """Serves the initial setup page."""
+    return send_from_directory(get_base_path(), 'setup.html')
 
 @app.route('/dashboard')
 @login_required
