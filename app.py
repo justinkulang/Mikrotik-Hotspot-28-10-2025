@@ -126,21 +126,26 @@ class ConfigLoader:
             return default_config
 
     def get_config(self):
+        logger.debug(f"Getting config: {self.config}")
         return self.config
 
     def update_config(self, new_config):
         # Update mikrotik config, encrypting password if it exists
         if 'mikrotik' in new_config:
+            logger.debug(f"Updating mikrotik config with: {new_config['mikrotik']}")
             if 'password' in new_config['mikrotik']:
                 new_config['mikrotik']['password'] = encrypt_password(new_config['mikrotik']['password'], self.key)
             self.config['mikrotik'].update(new_config['mikrotik'])
 
         # Update server config
         if 'server' in new_config:
+            logger.debug(f"Updating server config with: {new_config['server']}")
             self.config['server'].update(new_config['server'])
 
         with open(self.config_file, 'w') as f:
             json.dump(self.config, f, indent=4)
+        logger.debug("Configuration saved to config.json")
+        self.config = self._load_config()
 
     def reset_mikrotik_config_to_defaults(self):
         """Resets the Mikrotik part of the configuration to its original defaults."""
@@ -961,8 +966,10 @@ def initial_connect():
         return jsonify({'success': False, 'message': 'Invalid port number. Must be between 0 and 65535.'}), 400
 
     logger.info(f"Attempting initial connection to Mikrotik: {host}:{port} with user: {username}")
+    logger.debug(f"Received login request with data: {data}")
     try:
         # Attempt connection
+        logger.debug("Attempting to establish a temporary connection...")
         temp_conn = librouteros.connect(
             host=host,
             username=username,
@@ -982,8 +989,10 @@ def initial_connect():
             "use_ssl": app_config['mikrotik'].get('use_ssl', False), # Preserve existing SSL setting
             "hotspot_login_url": app_config['mikrotik'].get('hotspot_login_url', '') # Preserve existing
         }
+        logger.debug(f"Calling update_config with: {new_mikrotik_config}")
         config_loader.update_config({'mikrotik': new_mikrotik_config})
         app_config = config_loader.get_config() # Reload app_config to reflect changes
+        logger.debug(f"app_config after update: {app_config}")
 
 
         return jsonify({'success': True, 'message': 'Successfully connected and configuration saved.'})
