@@ -18,6 +18,8 @@ import io
 import csv
 from flask import Response
 import base64
+import copy
+from crypto import load_key, encrypt_password, decrypt_password
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -83,6 +85,7 @@ class ConfigLoader:
     """Handles loading and managing application configuration."""
     def __init__(self, config_file='config.json'):
         self.config_file = os.path.join(get_base_path(), config_file)
+        self.key = load_key()
         self.config = self._load_config()
 
     def _load_config(self):
@@ -97,9 +100,9 @@ class ConfigLoader:
                 "hotspot_login_url": "http://hotspot.setup/login"
             },
             "server": {
-                "host": "0.0.0.0",
-                "port": 5000,
-                "debug": True
+                "host": os.environ.get('HOST', '0.0.0.0'),
+                "port": int(os.environ.get('PORT', 5000)),
+                "debug": os.environ.get('DEBUG', 'true').lower() == 'true'
             }
         }
 
@@ -109,6 +112,13 @@ class ConfigLoader:
                 # Deep merge with default to ensure new keys are present
                 default_config['mikrotik'].update(loaded_config.get('mikrotik', {}))
                 default_config['server'].update(loaded_config.get('server', {}))
+                # Decrypt password
+                if default_config['mikrotik']['password']:
+                    try:
+                        default_config['mikrotik']['password'] = decrypt_password(default_config['mikrotik']['password'], self.key)
+                    except Exception as e:
+                        logger.error(f"Failed to decrypt password: {e}. Resetting to empty.")
+                        default_config['mikrotik']['password'] = ""
                 return default_config
         else:
             with open(self.config_file, 'w') as f:
@@ -119,8 +129,16 @@ class ConfigLoader:
         return self.config
 
     def update_config(self, new_config):
-        self.config['mikrotik'].update(new_config.get('mikrotik', {}))
-        self.config['server'].update(new_config.get('server', {}))
+        # Update mikrotik config, encrypting password if it exists
+        if 'mikrotik' in new_config:
+            if 'password' in new_config['mikrotik']:
+                new_config['mikrotik']['password'] = encrypt_password(new_config['mikrotik']['password'], self.key)
+            self.config['mikrotik'].update(new_config['mikrotik'])
+
+        # Update server config
+        if 'server' in new_config:
+            self.config['server'].update(new_config['server'])
+
         with open(self.config_file, 'w') as f:
             json.dump(self.config, f, indent=4)
 
@@ -967,6 +985,7 @@ def initial_connect():
         config_loader.update_config({'mikrotik': new_mikrotik_config})
         app_config = config_loader.get_config() # Reload app_config to reflect changes
 
+
         return jsonify({'success': True, 'message': 'Successfully connected and configuration saved.'})
 
     except (librouteros.exceptions.LibRouterosError, TrapError, socket.error, ConnectionRefusedError, OSError) as e:
@@ -990,7 +1009,9 @@ def test_connection():
 
 @app.route('/api/config', methods=['GET'])
 def get_config_route():
-    cfg = config_loader.get_config()
+    cfg = copy.deepcopy(config_loader.get_config())
+    # Don't send the password to the client
+    cfg['mikrotik'].pop('password', None)
     # Add status of optional features
     cfg['features'] = {
         'pdf_export': WEASYPRINT_AVAILABLE,
@@ -1384,9 +1405,18 @@ def get_translations():
     return jsonify(translations)
 
 if __name__ == '__main__':
-    server_config = app_config['server']
+    # When running directly, use the server config from the loaded settings
+    server_config = config_loader.get_config()['server']
+    host = server_config.get('host')
+    port = server_config.get('port')
+    debug = server_config.get('debug')
+
     print("="*40)
-    print(_("  Mikrotik Hotspot Management System v2"))
+    print(_("  Mikrotik Hotspot Management System v2 (Development Server)"))
     print("="*40)
-    print(f"\n✅ {_('Dashboard available at:')} http://{server_config['host']}:{server_config['port']}")
-    app.run(host=server_config['host'], port=server_config['port'], debug=server_config['debug'])
+    print(f"\n✅ {_('Dashboard available at:')} http://{host}:{port}")
+    if debug:
+        print("🐞 Debug mode is ON")
+
+    # Note: This is a development server. For production, use a WSGI server like Gunicorn.
+    app.run(host=host, port=port, debug=debug)
