@@ -6,3 +6,6 @@ qrcode[pil]
 Flask-Babel
 gunicorn
 cryptography
+Flask-SQLAlchemy
+Flask-Login
+Flask-Migrate

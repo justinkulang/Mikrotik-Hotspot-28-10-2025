@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Management - Hotspot Manager</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #0d6efd;
+            --secondary-color: #6c757d;
+            --success-color: #198754;
+            --danger-color: #dc3545;
+            --light-color: #f8f9fa;
+            --dark-color: #212529;
+            --font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            --border-radius: 0.375rem;
+            --box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: var(--font-family);
+            background-color: #f0f2f5;
+            color: var(--dark-color);
+            padding: 2rem;
+        }
+        .container {
+            max-width: 1200px;
+            margin: auto;
+            background: #fff;
+            padding: 2rem;
+            border-radius: var(--border-radius);
+            box-shadow: var(--box-shadow);
+        }
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .btn {
+            display: inline-flex; align-items: center; gap: 0.5rem;
+            padding: 0.6rem 1.2rem; font-size: 1rem; font-weight: 500;
+            border: 1px solid transparent; border-radius: var(--border-radius);
+            cursor: pointer; text-decoration: none; transition: all 0.2s;
+        }
+        .btn-primary { background-color: var(--primary-color); color: #fff; }
+        .btn-danger { background-color: var(--danger-color); color: #fff; }
+        .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.875rem; }
+        .table-container { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 0.8rem; text-align: left; border-bottom: 1px solid #dee2e6; }
+        th { background-color: var(--light-color); }
+        .modal {
+            display: none; position: fixed; z-index: 1050; top: 0; left: 0; width: 100%; height: 100%;
+            overflow: hidden; background-color: rgba(0,0,0,0.5);
+            align-items: center; justify-content: center;
+        }
+        .modal-dialog { width: auto; max-width: 500px; }
+        .modal-content { background-color: #fff; border-radius: var(--border-radius); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; border-bottom: 1px solid #dee2e6; }
+        .modal-body { padding: 1.5rem; }
+        .modal-footer { display: flex; justify-content: flex-end; gap: 0.5rem; padding: 1rem 1.5rem; }
+        .form-group { margin-bottom: 1rem; }
+        .form-group label { display: block; margin-bottom: 0.5rem; }
+        .form-group input, .form-group select { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: var(--border-radius); }
+        .alert { padding: 1rem; margin-bottom: 1rem; border: 1px solid transparent; border-radius: var(--border-radius); display: none; }
+        .alert-success { color: #0f5132; background-color: #d1e7dd; }
+        .alert-danger { color: #842029; background-color: #f8d7da; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="page-header">
+            <h1>User Management</h1>
+            <a href="/dashboard" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Back to Dashboard</a>
+        </div>
+        <div id="globalAlert" class="alert"></div>
+        <button class="btn btn-primary" onclick="openUserModal()" style="margin-bottom: 1rem;">
+            <i class="fas fa-plus"></i> Add User
+        </button>
+        <div class="table-container">
+            <table id="usersTable">
+                <thead>
+                    <tr>
+                        <th>Username</th>
+                        <th>Role</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="userModal" class="modal" style="display: none;">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form id="userForm">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="modalTitle">Add User</h5>
+                        <button type="button" class="close-button" onclick="closeModal()">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" id="userId">
+                        <div class="form-group">
+                            <label for="username">Username</label>
+                            <input type="text" id="username" class="form-control" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="password">Password</label>
+                            <input type="password" id="password" class="form-control">
+                            <small>Leave blank to keep current password when editing.</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="role">Role</label>
+                            <select id="role" class="form-control">
+                                <option value="admin">Admin</option>
+                                <option value="operator">Operator</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadUsers();
+
+    document.getElementById('userForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const userId = document.getElementById('userId').value;
+        const url = userId ? `/api/users/${userId}` : '/api/users';
+        const method = userId ? 'PUT' : 'POST';
+
+        const payload = {
+            username: document.getElementById('username').value,
+            role: document.getElementById('role').value
+        };
+        const password = document.getElementById('password').value;
+        if (password) {
+            payload.password = password;
+        }
+
+        const response = await fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+        if (response.ok) {
+            showAlert('success', result.message);
+            closeModal();
+            loadUsers();
+        } else {
+            showAlert('danger', result.message);
+        }
+    });
+});
+
+async function loadUsers() {
+    const response = await fetch('/api/users');
+    const users = await response.json();
+    const tbody = document.querySelector('#usersTable tbody');
+    tbody.innerHTML = '';
+    users.forEach(user => {
+        tbody.innerHTML += `
+            <tr>
+                <td>${user.username}</td>
+                <td>${user.role}</td>
+                <td>
+                    <button class="btn btn-sm btn-primary" onclick="openUserModal('${user.id}')">Edit</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteUser('${user.id}')">Delete</button>
+                </td>
+            </tr>
+        `;
+    });
+}
+
+async function openUserModal(userId = null) {
+    const form = document.getElementById('userForm');
+    form.reset();
+    document.getElementById('userId').value = '';
+    document.getElementById('modalTitle').textContent = 'Add User';
+
+    if (userId) {
+        const response = await fetch(`/api/users/${userId}`);
+        const user = await response.json();
+        document.getElementById('modalTitle').textContent = 'Edit User';
+        document.getElementById('userId').value = user.id;
+        document.getElementById('username').value = user.username;
+        document.getElementById('role').value = user.role;
+    }
+
+    document.getElementById('userModal').style.display = 'flex';
+}
+
+function closeModal() {
+    document.getElementById('userModal').style.display = 'none';
+}
+
+async function deleteUser(userId) {
+    if (confirm('Are you sure you want to delete this user?')) {
+        const response = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
+        const result = await response.json();
+        if (response.ok) {
+            showAlert('success', result.message);
+            loadUsers();
+        } else {
+            showAlert('danger', result.message);
+        }
+    }
+}
+
+function showAlert(type, message) {
+    const alert = document.getElementById('globalAlert');
+    alert.className = `alert alert-${type}`;
+    alert.textContent = message;
+    alert.style.display = 'block';
+    setTimeout(() => { alert.style.display = 'none'; }, 3000);
+}
+</script>
+</body>
+</html>

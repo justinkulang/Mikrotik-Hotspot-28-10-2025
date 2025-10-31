@@ -20,6 +20,11 @@ from flask import Response
 import base64
 import copy
 from crypto import load_key, encrypt_password, decrypt_password
+from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+from models import db, User
+from functools import wraps
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -58,7 +63,27 @@ except ImportError:
 
 
 app = Flask(__name__)
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'a_secure_random_secret_key')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///hotspot.db')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 CORS(app)
+
+db.init_app(app)
+migrate = Migrate(app, db)
+login_manager = LoginManager(app)
+login_manager.login_view = 'login_page'
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated or current_user.role != 'admin':
+            return jsonify({'message': 'Admins only!'}), 403
+        return f(*args, **kwargs)
+    return decorated_function
 
 # Language configuration
 app.config['LANGUAGES'] = ['en', 'ar', 'fr']
@@ -935,16 +960,92 @@ def generate_qr_code_base64(login_url, username, password):
     return base64.b64encode(buffered.getvalue()).decode('utf-8')
 
 # --- Flask Routes ---
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    data = request.json
+    username = data.get('username')
+    password = data.get('password')
+    user = User.query.filter_by(username=username).first()
+    if user and user.check_password(password):
+        login_user(user)
+        return jsonify({'success': True, 'user': {'username': user.username, 'role': user.role}})
+    return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
+
+@app.route('/api/auth/logout', methods=['POST'])
+@login_required
+def auth_logout():
+    logout_user()
+    return jsonify({'success': True})
+
+@app.route('/api/auth/status', methods=['GET'])
+def auth_status():
+    if current_user.is_authenticated:
+        return jsonify({'is_logged_in': True, 'user': {'username': current_user.username, 'role': current_user.role}})
+    return jsonify({'is_logged_in': False})
+
 @app.route('/')
 def login_page():
     """Serves the login page."""
     return send_from_directory(get_base_path(), 'login.html')
 
 @app.route('/dashboard')
+@login_required
 def index():
     """Serves the main dashboard page."""
-    # TODO: Add authentication check here in a later step
     return send_from_directory(get_base_path(), 'mikrotik_userman_dashboard.html')
+
+@app.route('/users')
+@login_required
+def users_page():
+    """Serves the user management page."""
+    return send_from_directory(get_base_path(), 'users.html')
+
+@app.route('/api/users', methods=['GET'])
+@login_required
+@admin_required
+def get_dashboard_users():
+    users = User.query.all()
+    return jsonify([{'id': u.id, 'username': u.username, 'role': u.role} for u in users])
+
+@app.route('/api/users', methods=['POST'])
+@login_required
+@admin_required
+def create_dashboard_user():
+    data = request.json
+    user = User(username=data['username'], role=data['role'])
+    user.set_password(data['password'])
+    db.session.add(user)
+    db.session.commit()
+    return jsonify({'message': 'User created successfully'})
+
+@app.route('/api/users/<int:user_id>', methods=['GET'])
+@login_required
+@admin_required
+def get_dashboard_user(user_id):
+    user = User.query.get_or_404(user_id)
+    return jsonify({'id': user.id, 'username': user.username, 'role': user.role})
+
+@app.route('/api/users/<int:user_id>', methods=['PUT'])
+@login_required
+@admin_required
+def update_dashboard_user(user_id):
+    user = User.query.get_or_404(user_id)
+    data = request.json
+    user.username = data['username']
+    user.role = data['role']
+    if data.get('password'):
+        user.set_password(data['password'])
+    db.session.commit()
+    return jsonify({'message': 'User updated successfully'})
+
+@app.route('/api/users/<int:user_id>', methods=['DELETE'])
+@login_required
+@admin_required
+def delete_dashboard_user(user_id):
+    user = User.query.get_or_404(user_id)
+    db.session.delete(user)
+    db.session.commit()
+    return jsonify({'message': 'User deleted successfully'})
 
 @app.route('/api/initial-connect', methods=['POST'])
 def initial_connect():
@@ -1029,12 +1130,15 @@ def get_config_route():
     return jsonify(cfg)
 
 @app.route('/api/config', methods=['POST'])
+@login_required
+@admin_required
 def update_config_route():
     data = request.json
     config_loader.update_config(data)
     return jsonify({'success': True, 'message': 'Configuration updated and saved.'})
 
 @app.route('/api/dashboard-stats', methods=['GET'])
+@login_required
 def get_dashboard_stats():
     users = router_os_service.get_hotspot_users()
     sessions = router_os_service.get_active_sessions()
@@ -1042,12 +1146,14 @@ def get_dashboard_stats():
     active_sessions = len(sessions)
     return jsonify({'total_users': total_users, 'active_sessions': active_sessions})
 
-@app.route('/api/users', methods=['GET'])
+@app.route('/api/hotspot/users', methods=['GET'])
+@login_required
 def get_users():
     users = router_os_service.get_hotspot_users()
     return jsonify({'users': users})
 
-@app.route('/api/users', methods=['POST'])
+@app.route('/api/hotspot/users', methods=['POST'])
+@login_required
 def create_user():
     data = request.json
     username = data.get('name')
@@ -1059,6 +1165,8 @@ def create_user():
     return jsonify({'success': success, 'message': message})
     
 @app.route('/api/bulk-create-users', methods=['POST'])
+@login_required
+@admin_required
 def bulk_create_users():
     data = request.json
     number_of_users = data.get('number_of_users')
@@ -1127,7 +1235,8 @@ def bulk_create_users():
         'errors': errors
     })
 
-@app.route('/api/users/<username>', methods=['PUT'])
+@app.route('/api/hotspot/users/<username>', methods=['PUT'])
+@login_required
 def edit_user(username: str):
     data = request.json
     if 'disabled' in data:
@@ -1136,22 +1245,29 @@ def edit_user(username: str):
     success, message = router_os_service.edit_hotspot_user(username, data)
     return jsonify({'success': success, 'message': message})
 
-@app.route('/api/users/<username>', methods=['DELETE'])
+@app.route('/api/hotspot/users/<username>', methods=['DELETE'])
+@login_required
+@admin_required
 def delete_user(username: str):
     success, message = router_os_service.delete_hotspot_user(username)
     return jsonify({'success': success, 'message': message})
 
 @app.route('/api/active-sessions', methods=['GET'])
+@login_required
 def get_active_sessions_route():
     sessions = router_os_service.get_active_sessions()
     return jsonify({'sessions': sessions})
 
 @app.route('/api/disconnect-user/<active_id>', methods=['POST'])
+@login_required
+@admin_required
 def disconnect_user_session(active_id: str):
     success, message = router_os_service.disconnect_user(active_id)
     return jsonify({'success': success, 'message': message})
 
 @app.route('/api/delete-expired-users', methods=['POST'])
+@login_required
+@admin_required
 def delete_expired_users_route():
     success, message, count = router_os_service.find_and_delete_expired_users()
     return jsonify({'success': success, 'message': message, 'deleted_count': count})
@@ -1195,11 +1311,14 @@ def delete_users_by_active_status_route(status: str):
 
 # --- Profile Management Routes ---
 @app.route('/api/profiles', methods=['GET'])
+@login_required
 def get_profiles_route():
     profiles = router_os_service.get_user_profiles()
     return jsonify({'profiles': profiles})
 
 @app.route('/api/profiles', methods=['POST'])
+@login_required
+@admin_required
 def create_profile_route():
     data = request.json
     if not data.get('name'):
@@ -1208,6 +1327,8 @@ def create_profile_route():
     return jsonify({'success': success, 'message': message})
 
 @app.route('/api/profiles/<profile_id>', methods=['PUT'])
+@login_required
+@admin_required
 def edit_profile_route(profile_id: str):
     data = request.json
     if not data:
@@ -1216,12 +1337,15 @@ def edit_profile_route(profile_id: str):
     return jsonify({'success': success, 'message': message})
 
 @app.route('/api/profiles/<profile_id>', methods=['DELETE'])
+@login_required
+@admin_required
 def delete_profile_route(profile_id: str):
     success, message = router_os_service.delete_hotspot_profile(profile_id)
     return jsonify({'success': success, 'message': message})
 
 # --- UNIFIED EXPORT ROUTE ---
 @app.route('/api/export-users', methods=['GET'])
+@login_required
 def export_users_route():
     export_format = request.args.get('format', 'json').lower()
     profile_filter = request.args.get('profile_filter')
@@ -1289,6 +1413,7 @@ def export_users_route():
         return jsonify({"success": False, "message": _("Invalid export format.")}), 400
 
 @app.route('/api/analytics/basic_summary', methods=['GET'])
+@login_required
 def get_basic_analytics_summary_route():
     try:
         # The require_mikrotik_connection before_request handler should ensure
@@ -1429,3 +1554,15 @@ if __name__ == '__main__':
 
     # Note: This is a development server. For production, use a WSGI server like Gunicorn.
     app.run(host=host, port=port, debug=debug)
+
+@app.cli.command("create-admin")
+def create_admin():
+    """Creates a new admin user."""
+    import getpass
+    username = input("Enter username: ")
+    password = getpass.getpass("Enter password: ")
+    user = User(username=username, role='admin')
+    user.set_password(password)
+    db.session.add(user)
+    db.session.commit()
+    print(f"Admin user {username} created successfully.")

@@ -1,1 +1,12 @@
+# Secrets
 secret.key
+
+# Python
+__pycache__/
+*.pyc
+
+# Database
+instance/
+
+# Logs
+flask_output.log
