@@ -5,3 +5,4 @@ weasyprint
 qrcode[pil]
 Flask-Babel
 gunicorn
+cryptography
