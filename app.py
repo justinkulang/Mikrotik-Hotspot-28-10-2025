@@ -18,6 +18,7 @@ import io
 import csv
 from flask import Response
 import base64
+import copy
 from crypto import load_key, encrypt_password, decrypt_password
 
 # Configure logging
@@ -99,9 +100,9 @@ class ConfigLoader:
                 "hotspot_login_url": "http://hotspot.setup/login"
             },
             "server": {
-                "host": "0.0.0.0",
-                "port": 5000,
-                "debug": True
+                "host": os.environ.get('HOST', '0.0.0.0'),
+                "port": int(os.environ.get('PORT', 5000)),
+                "debug": os.environ.get('DEBUG', 'true').lower() == 'true'
             }
         }
 
@@ -1008,7 +1009,7 @@ def test_connection():
 
 @app.route('/api/config', methods=['GET'])
 def get_config_route():
-    cfg = config_loader.get_config().copy()
+    cfg = copy.deepcopy(config_loader.get_config())
     # Don't send the password to the client
     cfg['mikrotik'].pop('password', None)
     # Add status of optional features
@@ -1404,9 +1405,18 @@ def get_translations():
     return jsonify(translations)
 
 if __name__ == '__main__':
-    server_config = app_config['server']
+    # When running directly, use the server config from the loaded settings
+    server_config = config_loader.get_config()['server']
+    host = server_config.get('host')
+    port = server_config.get('port')
+    debug = server_config.get('debug')
+
     print("="*40)
-    print(_("  Mikrotik Hotspot Management System v2"))
+    print(_("  Mikrotik Hotspot Management System v2 (Development Server)"))
     print("="*40)
-    print(f"\n✅ {_('Dashboard available at:')} http://{server_config['host']}:{server_config['port']}")
-    app.run(host=server_config['host'], port=server_config['port'], debug=server_config['debug'])
+    print(f"\n✅ {_('Dashboard available at:')} http://{host}:{port}")
+    if debug:
+        print("🐞 Debug mode is ON")
+
+    # Note: This is a development server. For production, use a WSGI server like Gunicorn.
+    app.run(host=host, port=port, debug=debug)

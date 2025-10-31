@@ -4,3 +4,4 @@ librouteros==3.2.0
 weasyprint
 qrcode[pil]
 Flask-Babel
+gunicorn
